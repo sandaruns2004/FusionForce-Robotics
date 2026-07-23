@@ -15,7 +15,7 @@
 
 ## Actuators
 
--   12 × DS3218/DS3225 servos (legs)
+-   12 or 8 × DS3218/DS3225 servos (legs)
 -   1 × MG996R/DS3218 (gripper)
 -   1 × SG90 (optional wrist)
 
@@ -80,7 +80,7 @@
   STM32 Black Pill             1
   Camera Module 3              1
   PCA9685                      1
-  Leg Servos                  12
+  Leg Servos                  12 or 8
   Gripper Servo                1
   Wrist Servo (Optional)       1
   VL53L0X                      3
