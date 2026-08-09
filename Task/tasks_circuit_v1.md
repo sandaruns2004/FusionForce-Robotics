@@ -1,106 +1,58 @@
-## COMPETITION DESIGN AND ROBOTIC EN2533
+# IN24 EN2533 ROBOTIC DESIGN AND COMPETITION
 
+<img src="./page_1.png" alt="Cover" width="500" />
 
-## END
+## FULL TASKS DESIGN
 
--
+<img src="./page_2.png" alt="Full Tasks Design Diagram" width="500" />
 
-designs shown in this docume!
+This diagram presents a preliminary sketch of the complete task circuit. All designs shown in this document including individual task layouts are conceptual and not to scale. A fully detailed design specification, covering exact dimensions, operating instructions, task constraints, and scoring criteria, will be released in a subsequent revision.
 
-not to scale. A full
+## TASK #01
 
-conceptual and
+<img src="./page_3.png" alt="Task 01 Diagram" width="500" />
 
-exact dimensions, o oping p ing instructions, sir in a subsequent task constraints, and — scoring ~~ criteria, will
+The robot begins its run at the designated Start point and follows the guideline into the grid section.
 
-®
-
-L
-
-ketch of the complete task cir
-
-a
-
-ing individual task layouts design specification, ce ering
-
-®
-
-
-The begins its run at the designated Start point and
-
-follows the guideline into the grid section.
-
-## Objectives:
-
+**Objectives:**
 - Navigate the grid using line-following logic to locate the colored ball, which will be positioned at one of the intersection points ("crosses") within the grid.
-
-- Detect and identify the ball's sensor. the appropriate
-
+- Detect and identify the ball's color using the appropriate sensor.
 - Grasp the ball using the gripping mechanism and store it securely within the robot's internal compartment.
+- Retain the ball's color in memory, as this value will be required to complete Task #04.
+- Exit the grid along the guideline and proceed to the next task section
 
-- Retain the ball's color in required to complete Task #04. memory, as this value will be
+## TASK #02
 
-- the grid along the guideline and proceed to the next . task section -
+<img src="./page_4.png" alt="Task 02 Diagram" width="500" />
 
-.
+The robot follows the guideline into a narrow corridor formed by two parallel walls.
 
-
-.
-
-The robot follows the guideline into a harrow corridor formed by
-
-two parallel walls.
-
-Objectives:
-
+**Objectives:**
 - Detect and follow the boundary walls while progressing through the corridor.
-
-- « "Identify a gap in one of the walls, located partway along the corridor. The gap may appear on either the left or right wall (the example shown here has the gap on the left).
-
-- Navigate through or aroun e gap without exiting the corridor prematurely or making contagt with the walls.
-
+- Identify a gap in one of the walls, located partway along the corridor. The gap may appear on either the left or right wall (the example shown here has the gap on the left).
+- Navigate through or around the gap without exiting the corridor prematurely or making contact with the walls.
 - Successfully clear the corridor and continue along the guideline.
 
-=
+## TASK #03
 
-.
+<img src="./page_5.png" alt="Task 03 Diagram" width="500" />
 
+The robot follows the guideline into a second corridor formed by two parallel walls, matching the structure of Task #02.
 
-®
+**Objectives:**
+- Detect and follow the boundary walls while progressing through the corridor.
+- Identify an obstacle (block) placed directly in the robot's path, blocking the guideline.
+- Push the obstacle aside using the robot's front-mounted mechanism to clear a path forward.
+- Successfully clear the corridor after removing the obstruction and continue along the guideline.
 
-The robot follows the guideline into a second corridor formed by two parallel walls, matching the structure of
+## TASK #04
 
-Task #02.
+<img src="./page_6.png" alt="Task 04 Diagram" width="500" />
 
-Objectives:
+The robot follows the guideline toward a three-way color-sorting junction, where the path splits into three colored segments: green, blue, and Red.
 
-Detect and follow the boundary walls while
-
-progressing through the corridor.
-
-- . Identify an (block) placed directly in the robot's path, blocking the guideline.
-
-- Push the obstacle aside using the robot's fgont- mounted mechanism to clear a pgth forward. Successfully clear the corridor after removing the
-
-- obstruction and continue along the guideline.
-
-*
-
-EJ
-
-
-The robot follows the guideline toward a three-way color- sorting junction, where the path splits into three colored
-
-segments: green, blue, and Red.
-
-Objectives:
-
-<
-
+**Objectives:**
 - Approach the junction and evaluate the color memorized during Task #01.
-
-- Detect and stop at the segment matching the stored ball
-
-- « Release the ball onto the correct cofor segment.
-
+- Detect and stop at the segment matching the stored ball color.
+- Release the ball onto the correct color segment.
 - Resume following the guideline from the matched segment and proceed to the End point to complete the run.
