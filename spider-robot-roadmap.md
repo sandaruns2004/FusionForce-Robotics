@@ -29,7 +29,7 @@
 | Camera module (Pi Camera v3 or USB webcam) | 1 | Vision/navigation |
 | IMU (MPU6050 or BNO055) | 1 | Balance/orientation feedback |
 | BEC / voltage regulator (5V/6V high-current) | 1–2 | Servos draw significant current — do NOT power from Pi's 5V rail |
-| LiPo battery (2S/3S, capacity sized to servo draw) | 1 | Main power |
+| LiPo battery (**3S 2200mAh 60C** — 11.1V nominal, 12.6V max) | 1 | 60C = 132A burst — eliminates brownout risk; ~65 min runtime |
 | Chassis/leg frame (3D printed or laser-cut) | — | Quadruped leg geometry |
 | Logic-level converter (if 3.3V STM32 to 5V servo signals needed) | as needed | |
 | Wiring, connectors, fuse/switch | — | |
@@ -51,7 +51,7 @@
 
 ### Phase 2 — Electrical & Power
 - Wire servo power bus separately from logic power (common ground between STM32/Pi/servo driver is mandatory).
-- Add fusing/switch and confirm battery can supply peak current for all 12 servos moving simultaneously.
+- Add fusing/switch and confirm battery can supply peak current for all 12 servos moving simultaneously. With 3S 2200mAh 60C (132A burst), brownout is not a risk — focus on ensuring the BEC is rated ≥15A continuous and its input voltage range accepts 3S (7.4–12.6V).
 - Bench-test each servo individually with a simple PWM signal before full integration.
 
 ### Phase 3 — STM32 Firmware (low-level control)
@@ -79,7 +79,7 @@
 
 ### Phase 7 — Integration & Autonomy
 - Combine gait engine + IMU balance feedback + vision-based navigation into one control loop.
-- Add safety behaviors: low-battery stop, servo overcurrent/stall detection, fall detection via IMU.
+- Add safety behaviors: **low-battery stop** (monitor ADC; alert at 10.5V, halt at 9.9V for 3S), servo overcurrent/stall detection, fall detection via IMU.
 - Tune gait parameters for your specific chassis weight and servo torque.
 
 ### Phase 8 — Testing & Refinement

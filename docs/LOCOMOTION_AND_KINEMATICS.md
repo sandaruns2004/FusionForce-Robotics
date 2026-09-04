@@ -26,10 +26,8 @@ Used during Grid Search (Task 01) and Ball Grasping.
 - The Center of Gravity (CoG) must physically shift over the triangle formed by the 3 grounded legs *before* the 4th leg lifts.
 - **Duty Cycle**: 0.75 (Each leg spends 75% of the time on the ground).
 
-### Phase 2: Dynamic Trot Gait (Medium Stability, High Speed)
-Used during Straight Corridors (Task 03).
-- Diagonal legs move together (e.g., Front-Left and Back-Right lift, while Front-Right and Back-Left push backward).
-- **Duty Cycle**: 0.50 (Each leg spends 50% of the time on the ground).
+> [!WARNING]
+> **Trot gait is NOT used in this design.** MG90S torque at 2-leg stance (trot) = 0.96× safety margin < 1.0 → insufficient. Crawl gait is used exclusively across all tasks.
 
 ## 4. Foot Trajectory (Bezier Curves)
 When a leg swings forward, it shouldn't just move in a straight line (it would scrape the floor). It must trace an arc.
@@ -41,11 +39,21 @@ We use a **Cubic Bezier Curve** to generate a smooth, mathematically continuous 
 
 ## 5. Locomotion Control Hierarchy
 ```text
-Raspberry Pi requests Vx = 5cm/s, Wz = 0.2 rad/s
+8× TCRT5000 Line Array
+   → Weighted centroid error (–3.5 to +3.5)
+   → PD Line Follower (Kp, Kd) → Wz (rad/s steering command)
          │
-STM32 Gait Generator calculates where each foot should be in space to achieve that speed
+Mission State Machine (STM32)
+   → Sets Vx (forward speed) based on current task state
+   → Passes [Vx, Vy=0, Wz] to Gait Generator
          │
-STM32 IK converts that spatial position into servo angles
+Gait Generator → 4 foot (X,Y,Z) targets per 20ms cycle
          │
-PCA9685 physically moves the servos
+IK Solver → 12 joint angles (θ1,θ2,θ3 per leg)
+         │
+PCA9685 (I2C1) → 15× MG90S servo PWM → Physical motion
+         │
+MPU6050 IMU → pitch/roll feedback → Postural PID → foot Z corrections (closed loop)
 ```
+
+All velocity commands are generated internally within the STM32. There is no external processor providing movement targets.

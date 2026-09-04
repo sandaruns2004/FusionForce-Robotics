@@ -1,55 +1,83 @@
 # HARDWARE ARCHITECTURE
 
 ## 1. Overview
-The hardware architecture of the FusionForce quadruped robot is designed around a dual-controller paradigm. It integrates computer vision, 14 degrees of freedom (DOF) in actuation, and multiple I2C sensor peripherals.
+The hardware architecture of the RUNNER-4 quadruped robot is designed around a **single-controller embedded paradigm**. All perception, decision-making, and real-time control are handled by a single STM32F411CEU6 microcontroller. This eliminates the Raspberry Pi layer, reducing weight, power draw, and system complexity.
 
 ## 2. Compute Layer
-- **High-Level Controller**: Raspberry Pi 4B (4GB or 8GB). Responsible for Linux, OpenCV, Python scripting, and decision-making.
-- **Low-Level Controller**: STM32F411CEU6 (Black Pill). Responsible for bare-metal C programming, Inverse Kinematics, gait generation, and safety watchdogs. Runs at 84MHz.
+- **Sole Controller**: STM32F411CEU6 (Black Pill). Responsible for bare-metal C programming, Mission State Machine, Inverse Kinematics, gait generation, sensor fusion, and safety watchdogs. Runs at 100MHz with hardware FPU.
 
 ## 3. Sensor Layer
-- **Vision**: Raspberry Pi Camera Module 3. Connected via CSI ribbon cable directly to the Pi. Used for line following and color recognition.
-- **Inertial Measurement**: MPU6050 (6-axis gyro/accelerometer). Connected to STM32 via I2C. Used for postural stability and pitch/roll detection.
-- **Distance Measurement**: 3x VL53L0X Time-of-Flight (ToF) sensors. Mounted front, left, and right. Connected to STM32 via I2C (using TCA9548A multiplexer if I2C addresses conflict). Used for wall-following and obstacle detection.
+
+| Sensor | Interface | Address/Pins | Purpose |
+|--------|-----------|-------------|---------|
+| **8-Channel TCRT5000 IR Line Array** | GPIO Digital | PA0–PA7 (8 pins) | Line following, intersection detection, junction identification |
+| **TCS34725 RGBC Colour Sensor** | I2C1 | 0x29 | Ball colour ID (arm 0°) + Floor zone colour ID (arm −70°) |
+| **MPU6050 IMU** | I2C1 | 0x68 | 6-axis gyro/accelerometer for postural stability and pitch/roll |
+| **VL53L0X ToF (Front)** | I2C2 | 0x30 (remap) | Obstacle/ball pedestal proximity detection |
+| **VL53L0X ToF (Left)** | I2C2 | 0x31 (remap) | Left wall distance for corridor centering |
+| **VL53L0X ToF (Right)** | I2C2 | 0x32 (remap) | Right wall distance for corridor centering |
+
+### Line Array Details
+- Type: 8× TCRT5000 reflective IR, digital output
+- Array width: ~70mm; sensor spacing: ~8.75mm
+- Mount position: Front-underside of body, 5–8mm above floor, centred on robot midline
+- Logic: HIGH = white/reflective surface detected; LOW = black surface
+
+### Colour Sensor Details
+- Type: TCS34725 RGBC, I2C, 0x29 on I2C1
+- Mount position: Gripper arm tip
+- **Mode A** (arm at 0° horizontal): Reads ball colour at 1–2cm range when arm lowers to pedestal height
+- **Mode B** (arm at −70° downward): Reads floor colour zone at 1–3cm range at 3-way junction
+- Built-in white LED illuminator controlled via STM32 PC0 for consistent lighting
 
 ## 4. Actuation Layer
-- **Servo Driver**: PCA9685 16-channel 12-bit PWM controller. Connected to STM32 via I2C.
-- **Leg Servos**: 12x DS3218 (or similar high-torque 20kg+ metal gear servos). Assigned to Coxa, Femur, and Tibia joints for all four legs.
-- **Gripper Servos**: 2x SG90 or MG90S micro-servos. One for opening/closing the claw, one for pitch (lifting the ball).
+- **Servo Driver**: PCA9685 16-channel 12-bit PWM controller on I2C1 (0x40).
+- **Leg Servos**: 12× MG90S (metal gear). CH0–CH11 on PCA9685. Coxa, Femur, Tibia for all four legs.
+- **Arm Servo**: 1× MG90S. CH12. Controls gripper arm pitch (0° ball mode / −70° floor mode / home).
+- **Gripper Servo**: 1× MG90S. CH13. Opens/closes claw around 40mm ball.
+- **Storage Gate Servo**: 1× MG90S. CH14. Locks ball in internal compartment; releases by gravity.
 
 ## 5. Mechanical Integration
-- **Chassis**: Custom 3D-printed body, designed symmetrically to maintain a centralized Center of Gravity (CoG).
-- **Leg Design**: 3-DOF per leg.
-- **Front Bumper**: A flat, rigid 3D-printed plate attached below the gripper to facilitate sliding the Task 03 block without leg entanglement.
+- **Chassis**: Custom 3D-printed PETG body. 3-tier deck: battery (bottom), STM32+PCA9685 (mid), sensor headers (top).
+- **Leg Design**: 3-DOF per leg (Coxa yaw ±45°, Femur pitch ±60°, Tibia pitch 0°–135°).
+- **Front Bumper**: Flat, rigid PETG plate (50%+ infill) at front-bottom, ground to 50mm height.
+- **Line Array Bracket**: 3D-printed mount holds TCRT5000 array at 5–8mm above floor.
+- **Arm Tip Mount**: Small 3D-printed shroud holds TCS34725 at gripper arm tip, with partial light shield.
 
 ## 6. Block Diagram
 
 ```mermaid
 flowchart TD
-    subgraph Compute
-        PI[Raspberry Pi 4B]
-        STM[STM32F411 Black Pill]
+    subgraph Compute["Compute (Single Controller)"]
+        STM["STM32F411CEU6 Black Pill\n100MHz · 512KB Flash · 128KB RAM"]
     end
 
     subgraph Sensors
-        CAM[Camera Module 3]
-        IMU[MPU6050]
-        TOF[3x VL53L0X]
+        LINE["8× TCRT5000\nLine Array"]
+        CLR["TCS34725\nColour Sensor"]
+        IMU["MPU6050\nIMU"]
+        TOF["3× VL53L0X\nToF Sensors"]
     end
 
     subgraph Actuators
-        PCA[PCA9685]
-        LEG[12x DS3218 Servos]
-        GRIP[2x SG90 Servos]
+        PCA["PCA9685\nPWM Driver"]
+        LEG["12× MG90S\nLeg Servos"]
+        MECH["3× MG90S\nArm · Gripper · Gate"]
     end
 
-    PI ---|CSI Ribbon| CAM
-    PI <==>|UART 115200| STM
-    
-    STM <==>|I2C| IMU
-    STM <==>|I2C| TOF
-    STM <==>|I2C| PCA
-    
-    PCA ===|PWM| LEG
-    PCA ===|PWM| GRIP
+    LINE -->|"GPIO PA0–PA7"| STM
+    CLR  <-->|"I2C1 0x29"| STM
+    IMU  <-->|"I2C1 0x68"| STM
+    TOF  <-->|"I2C2 XSHUT"| STM
+
+    STM  <-->|"I2C1 0x40"| PCA
+    PCA  ===|"PWM CH0–CH11"| LEG
+    PCA  ===|"PWM CH12–CH14"| MECH
 ```
+
+## 7. I2C Bus Summary
+
+| Bus | Pins | Speed | Devices |
+|-----|------|-------|---------|
+| **I2C1** | PB6 (SCL) / PB7 (SDA) | 400kHz | PCA9685 (0x40), MPU6050 (0x68), TCS34725 (0x29) |
+| **I2C2** | PB10 (SCL) / PB3 (SDA) | 400kHz | VL53L0X Front (0x30), Left (0x31), Right (0x32) |

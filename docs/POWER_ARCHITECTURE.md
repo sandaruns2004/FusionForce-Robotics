@@ -1,46 +1,79 @@
 # POWER ARCHITECTURE
 
 ## 1. Objective
-A quadruped robot is highly susceptible to power instability. 14 servos moving simultaneously can draw massive current spikes, pulling the battery voltage down momentarily. If the Raspberry Pi or STM32 shares this unstable rail, they will reboot (brownout). 
+A quadruped robot is highly susceptible to power instability. 15 servos moving simultaneously can draw massive current spikes, temporarily pulling battery voltage down. The STM32 and sensors must be isolated from this unstable rail.
 
-The primary rule of this architecture is **strict isolation between logic power and motor power**, tied together only by a common ground.
+The primary rule of this architecture is **strict isolation between servo power and logic power**, tied together only by a common star ground.
 
 ## 2. Power Sources and Regulators
-- **Primary Source**: 3S LiPo Battery (11.1V Nominal, 12.6V Max, ~2200mAh 30C+).
-- **Motor Regulator**: 5V 10A UBEC (Universal Battery Eliminator Circuit). Drops 11.1V to a high-current 5.0V.
-- **Logic Regulator**: 5V 5A Buck Converter. Drops 11.1V to a clean, isolated 5.0V for the Raspberry Pi.
+- **Primary Source**: 2S LiPo Battery (7.4V nominal, 8.4V max, 1300–2200mAh, 25C+). Within 24V DC competition limit.
+- **Servo Regulator**: 5V–6V / 15A Switching BEC (UBEC). Steps 7.4V down to a high-current 6V for MG90S servos at maximum torque.
+- **Logic Regulator**: STM32 board's onboard 3.3V LDO. Powered via STM32 VBUS pin (5V from battery via small 5V/1A buck or BEC secondary tap). Powers STM32 + all 3.3V sensors.
+
+> [!NOTE]
+> The separate 5V/3A buck converter previously used for the Raspberry Pi has been removed. Raspberry Pi is not part of this design. The logic subsystem (STM32 + all sensors) draws only ~250mA at 3.3V — the STM32's own LDO handles this with significant headroom.
 
 ## 3. Power Distribution Tree
 
 ```mermaid
 flowchart LR
-    BATT[3S LiPo Battery 11.1V] --> SWITCH[Kill Switch]
-    
-    SWITCH --> UBEC[10A UBEC]
-    SWITCH --> BUCK[5A Buck Converter]
-    
-    UBEC -->|5V High Current| PCA_PWR[PCA9685 Power Terminal]
-    PCA_PWR --> SERVOS[14x Servos]
-    
-    BUCK -->|5V Clean| PI[Raspberry Pi 4B]
-    
-    PI -->|5V / 3.3V out| STM[STM32 5V/3.3V in]
-    
-    STM -->|3.3V| SENSORS[IMU & ToF]
-    STM -->|3.3V| PCA_LOGIC[PCA9685 Logic VCC]
+    BATT["2S LiPo 7.4V"] --> SWITCH["Kill Switch"]
+
+    SWITCH --> BEC["5V–6V / 15A BEC"]
+    SWITCH --> BUCK["5V / 1A Buck\n(STM32 logic)"]
+
+    BEC --> |"6V High Current"| PCA_PWR["PCA9685 Power Terminal"]
+    PCA_PWR --> SERVOS["15× MG90S Servos"]
+
+    BUCK --> |"5V"| STM["STM32F411\n(VBUS pin)"]
+
+    STM --> |"3.3V LDO out"| SENSORS["MPU6050 + 3× VL53L0X\n+ TCS34725 + Line Array"]
+    STM --> |"3.3V"| PCA_LOGIC["PCA9685 Logic VCC"]
 ```
 
-## 4. Current & Voltage Analysis (Estimates)
-- **12x DS3218 Servos**: ~200mA idle each, up to ~2A stall current. Typical dynamic walking load: 4A to 6A total.
-- **2x SG90 Gripper**: ~100mA idle, ~500mA stall.
-- **Raspberry Pi 4B**: ~600mA idle, up to 3A under heavy CPU/Camera load.
-- **Total Peak System Current**: ~9A (well within the limits of the separated regulators and a 30C LiPo).
+## 4. Current & Voltage Analysis
 
-## 5. Grounding Topology (CRITICAL)
-For the I2C and UART signals to work, the Raspberry Pi, STM32, and PCA9685 must share a reference voltage.
-**Rule:** You must connect the Ground (`GND`) of the UBEC output, the Buck Converter output, the Pi, the STM32, and the PCA9685 together in a "Star" topology to prevent ground loops.
+| Component | Typical (mA) | Peak (mA) |
+|-----------|-------------|-----------|
+| 12× MG90S leg servos | 2400 | 8400 |
+| 3× MG90S mechanism (arm/grip/gate) | 300 | 2100 |
+| STM32F411 | 50 | 100 |
+| MPU6050 | 5 | 10 |
+| 3× VL53L0X | 15 | 20 |
+| TCS34725 (with LED active) | 65 | 65 |
+| 8× TCRT5000 line array | 100 | 120 |
+| PCA9685 logic | 10 | 15 |
+| **TOTAL** | **~2945** | **~10830** |
 
-## 6. Protection & Safety
-- **Fuses**: It is recommended to place a 10A automotive blade fuse between the UBEC and the PCA9685 power terminal. If a leg jams and stalls multiple servos, the fuse will blow before the servos or wiring melt.
-- **Battery Monitor**: A cheap LiPo voltage alarm should be connected to the balance lead of the battery. If any cell drops below 3.3V, the alarm sounds, indicating the robot must be shut down immediately to prevent permanent battery damage.
-- **Kill Switch**: A physical latching switch rated for at least 15A must be installed on the main battery positive wire before it splits to the UBEC and Buck converter.
+Realistic peak during walking: **4–6A** (not all servos stall simultaneously).
+
+> [!NOTE]
+> The Raspberry Pi 4B (1500mA typical, 2500mA peak) and its 5V/3A buck converter are removed. This reduces average system current by approximately 1.5A and saves ~73g of hardware.
+
+## 5. Runtime Estimate
+
+| Parameter | Value |
+|-----------|-------|
+| Battery | 2S LiPo 1300mAh |
+| Average draw (at 7.4V) | ~2.1A |
+| Estimated runtime | **~37 minutes** |
+| Competition time limit | 15 minutes |
+| Margin | **2.5× safety margin** |
+
+## 6. Grounding Topology (CRITICAL)
+For I2C and GPIO signals to work reliably, all devices must share the same reference voltage.
+
+**Rule:** Connect the GND of the BEC output, the 5V buck output, the STM32, the PCA9685 logic GND, and all sensor GNDs to a single star ground point.
+
+A ground loop between BEC (high-current servo switching) and the logic rail causes false I2C signals and GPIO glitches. Use star topology; use separate thick wire (≥18AWG) for servo ground return.
+
+## 7. Protection & Safety
+
+| Protection | Implementation |
+|-----------|----------------|
+| **Kill Switch** | Latching switch ≥15A on main battery positive wire |
+| **Servo Fuse** | 10A automotive blade fuse between BEC and PCA9685 V+ terminal |
+| **Decoupling Cap** | 4700µF electrolytic across PCA9685 V+ / GND to absorb current spikes |
+| **Battery Monitor** | STM32 ADC (PC1) via resistor divider (e.g., 10kΩ/3.3kΩ → 0–3.3V range for 0–8.4V battery) |
+| **Low Battery Alert** | Firmware: <6.8V → LED flash; <6.4V → halt servos |
+| **LiPo Alarm** | External buzzer alarm on balance lead (audible when any cell <3.3V) — use during testing |

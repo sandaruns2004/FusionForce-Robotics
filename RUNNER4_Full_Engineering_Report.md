@@ -25,7 +25,7 @@ The RUNNER-4 project delivers a fully autonomous 12-DOF quadruped robot designed
 | **Expansion** | Allowed if arena not damaged | Legs extend beyond footprint during walking |
 | **Electronics** | Pre-made MCU/sensor kits allowed | STM32 dev board + commercial sensor breakouts |
 | **Prohibited** | Wireless modules, LEGO/off-the-shelf robot kits | None used |
-| **Power** | Onboard; max 24V DC | 2S LiPo = 8.4V max (compliant) |
+| **Power** | Onboard; max 24V DC | 3S LiPo = 12.6V max (compliant) |
 | **Communication** | No external wireless/wired during operation | No Wi-Fi, Bluetooth, or tethering |
 | **Arena lines** | 30 mm wide | Camera-based detection |
 | **Arena surface** | Non-reflective matte | Simplifies vision thresholding |
@@ -150,12 +150,12 @@ The robot is a **4-legged quadruped** with **12 degrees of freedom** (3 DOF per 
 | Raspberry Pi 4B (2GB) | 46 |
 | Camera module | 5 |
 | MPU6050 + 3× VL53L0X | 9 |
-| 2S LiPo 1300mAh | 75 |
+| 3S LiPo 2200mAh 60C | 150 |
 | BEC + regulators | 23 |
 | 3D printed body + legs | 120 |
 | Ball mechanism + bumper | 35 |
 | Wiring + fasteners | 45 |
-| **TOTAL ESTIMATED** | **~577 g** |
+| **TOTAL ESTIMATED** | **~652 g** |
 
 ### Torque Requirements
 
@@ -179,7 +179,7 @@ The robot is a **4-legged quadruped** with **12 degrees of freedom** (3 DOF per 
 **Multi-deck construction:**
 - **Top deck**: Raspberry Pi + camera mount (~15 mm)
 - **Mid deck**: STM32 + PCA9685 + BEC (~12 mm)
-- **Bottom deck**: 2S LiPo battery + ball storage (~13 mm)
+- **Bottom deck**: 3S LiPo battery + ball storage (~13 mm)
 - **Material**: PETG or PLA+, 3D printed, 25–30% infill
 
 ## 7.5 Centre of Mass
@@ -354,16 +354,15 @@ Wi-Fi and Bluetooth must be **disabled at OS level** before competition.
 
 # 13. Power System
 
-**Battery: 2S LiPo, 1300–2200 mAh, 25C+** (7.4V nominal, 8.4V full, ≤24V compliant)
+**Battery: 3S LiPo, 2200 mAh, 60C** (11.1V nominal, 12.6V full, 9.9V cutoff — ≤24V compliant)
 
 ### Power Distribution
 
 ```
-2S LiPo → Toggle Switch → 10A Fuse → ┬→ 5V/15A BEC → PCA9685 V+ → Servos
+3S LiPo → Toggle Switch → 10A Fuse → ┬→ 5V/15A BEC → PCA9685 V+ → Servos
                                         │   (+ 4700µF cap across V+/GND)
-                                        ├→ 5V/3A Buck → Pi 4B (GPIO 5V)
-                                        └→ Voltage divider → STM32 ADC (PA7)
-                                            └→ STM32 VBUS → 3.3V LDO → Sensors
+                                        └→ Voltage divider → STM32 ADC (battery monitor)
+                                            └→ STM32 VBUS → 5V/1A Buck → 3.3V LDO → Sensors
 ```
 
 ### Power Budget
@@ -378,7 +377,7 @@ Wi-Fi and Bluetooth must be **disabled at OS level** before competition.
 
 Realistic peak during walking: **4–6A** (not all servos stall simultaneously).
 
-**Runtime**: 1300mAh / ~3.2A (at 7.4V) ≈ **24 minutes** — sufficient for 15-min competition.
+**Runtime**: 2200mAh / ~1.8A (at 11.1V, typical walking load) ≈ **~65 minutes** — **4× the 15-min competition limit**.
 
 ---
 
@@ -535,7 +534,7 @@ Error states: SAFE_STOP (excessive tilt/low battery), ERROR_RECOVERY
 | Servo stall | No IMU motion | Reduce load; retry; SAFE_STOP if persistent |
 | Camera fail | No frames | Halt; re-init; ToF-only degraded mode |
 | Pi timeout | No UART for 500ms | STM32 → autonomous stop |
-| Low battery | ADC < 6.8V | Flash LED; reduce speed; stop at 6.4V |
+| Low battery | ADC < 10.5V | Flash LED; reduce speed; stop at 9.9V |
 | Excessive tilt | IMU > 30° | Emergency stop all servos |
 | Ball pickup fail | >10 sec timeout | Retry once; skip if still fails |
 | Line lost | No centroid for 3s | Stop; rotate to search; hold last heading |
@@ -561,9 +560,9 @@ Error states: SAFE_STOP (excessive tilt/low battery), ERROR_RECOVERY
 
 # 28. Weight and Power Budget
 
-### Weight: ~577g estimated (target: <550g)
-### Power: ~4.3A typical, ~6A realistic peak
-### Runtime: ~24 min with 1300mAh (sufficient for 15-min competition)
+### Weight: ~652g estimated (battery upgraded to 3S 2200mAh; target: <650g)
+### Power: ~4.3A typical, ~6A realistic peak (from 11.1V 3S rail)
+### Runtime: **~65 min** with 3S 2200mAh 60C (4× the 15-min competition limit)
 
 ---
 
@@ -614,7 +613,7 @@ Error states: SAFE_STOP (excessive tilt/low battery), ERROR_RECOVERY
 | Ball mechanism | Scoop | 2-servo arm+gripper | 3-DOF arm | **2-servo arm** (reaches pedestal) |
 | Gait | Crawl | Trot | — | **Crawl** (within MG90S limits) |
 | Servo control | 1× PCA9685 | 2× PCA9685 | — | **1× PCA9685** (15/16 channels) |
-| Power | 2S LiPo | 3S LiPo | — | **2S LiPo** (lighter; adequate BEC margin) |
+| Power | 3S LiPo 2200mAh 60C | **3S LiPo 2200mAh 60C** | - | **3S LiPo 2200mAh 60C** (11.1V; 132A burst; no brownout; 65 min runtime) |
 
 ---
 
@@ -630,7 +629,7 @@ Error states: SAFE_STOP (excessive tilt/low battery), ERROR_RECOVERY
 | Camera | Pi Camera Module (CSI) |
 | IMU | MPU6050 |
 | Distance | 3× VL53L0X (XSHUT addressing) |
-| Battery | 2S LiPo, 1300–2200mAh |
+| Battery | **3S LiPo, 2200mAh, 60C** (11.1V nominal) |
 | Servo BEC | 5V/15A switching regulator |
 | Pi regulator | 5V/3A buck converter |
 | Ball mechanism | 2-servo arm + gripper |
@@ -708,8 +707,8 @@ The RUNNER-4 design balances capability and simplicity. The highest risk is MG90
 |---|---------|--------|
 | 1 | **Verify MG90S torque with physical prototype** | Determines entire servo strategy |
 | 2 | **Confirm body dimensions** (160×140mm?) | Footprint compliance |
-| 3 | **Select battery capacity** (1300 vs 2200mAh) | Weight vs runtime |
-| 4 | **2S vs 3S LiPo** | Weight vs BEC headroom |
+| 3 | **Battery confirmed** | 3S LiPo 2200mAh 60C — 11.1V, 132A burst, ~65 min runtime |
+| 4 | **BEC confirmed** | 5V–6V / 15A unit — compatible with 3S (7.4–12.6V input) |
 | 5 | **Ball arm geometry** (length, pivot height) | Must reach 5cm pedestal |
 | 6 | **Camera module** (v2 vs v3) | Focus type; weight |
 | 7 | **Foot material** (PETG vs rubber tip) | Arena traction |

@@ -1,89 +1,108 @@
 # TECHNICAL PROPOSAL
 
 ## Executive Summary
-This proposal outlines the engineering design for the FusionForce quadruped robot, engineered to compete in the IN24 EN2533 BREACH PROTOCOL competition. The solution utilizes a distributed dual-compute architecture, separating high-level Computer Vision and decision-making (Raspberry Pi 4B) from hard real-time locomotion and control (STM32F411). 
+This proposal outlines the engineering design for the RUNNER-4 quadruped robot competing in the IN24 EN2533 BREACH PROTOCOL competition. The solution uses a **single embedded MCU architecture** — an STM32F411CEU6 handles all perception, mission decision-making, and real-time motor control. An 8-channel TCRT5000 IR line array provides line following and intersection detection; a single TCS34725 RGBC colour sensor (mounted on the gripper arm tip) provides ball colour identification and floor zone detection in dual-mode. No Raspberry Pi, no camera, no Linux OS.
 
 ## Problem Statement
-The competition demands a fully autonomous, legged robot capable of navigating a line-following grid, locating and grasping a colored ball, traversing curved corridors with missing walls, pushing a sliding block, and depositing the ball into a specific color-coded zone. This requires robust perception, complex inverse kinematics, and strict size constraints (250x250mm).
+The competition demands a fully autonomous, legged robot capable of navigating a line-following grid, locating and grasping a coloured ball, traversing curved corridors with missing walls, pushing a sliding block, and depositing the ball into a specific colour-coded zone. This requires robust embedded perception, complex inverse kinematics, and strict size constraints (250×250mm).
 
 ## Competition Requirements
 1. **Locomotion**: Must use active legs (no wheels).
 2. **Autonomy**: Zero external inputs allowed post-start.
 3. **Tasks**: Grid search, object retrieval, narrow corridor wall-following, obstacle pushing, and sorting.
-4. **Constraints**: Maximum run time 15 minutes, 24V DC max, 250x250mm size limit.
+4. **Constraints**: Maximum run time 15 minutes, 24V DC max, 250×250mm size limit.
 
 ## Proposed Solution
-A 12-DOF 3D-printed quadruped platform augmented with a 2-DOF frontal micro-gripper for object manipulation and an integrated chassis bumper for pushing. 
+A 12-DOF 3D-printed quadruped platform controlled by a single STM32F411CEU6, augmented with a 2-DOF frontal arm+gripper (with TCS34725 at arm tip) and an integrated chassis bumper for pushing.
 
 ## System Architecture
-A three-domain hierarchy ensures stable separation of concerns:
-- **High-Level**: Raspberry Pi + Pi Camera (Perception and Task Planning)
-- **Low-Level**: STM32F411 (Motor Control, IK, Feedback)
-- **Mechanical**: 12-DOF chassis + Gripper
+A two-domain hierarchy:
+- **Domain 1 (Brain + Spine)**: STM32F411CEU6 — all perception, state machine, IK, gait, safety
+- **Domain 2 (Mechanical)**: 12-DOF chassis + arm/gripper + bumper
 
 ## Hardware Architecture
-- **MCU**: STM32F411CEU6 (Black Pill)
-- **SBC**: Raspberry Pi 4B (4GB/8GB)
-- **Sensors**: Camera Module 3, 3x VL53L0X ToF, MPU6050
-- **Actuators**: 12x DS3218 (legs), 2x SG90 (gripper)
-- **Drivers**: PCA9685 16-channel PWM
 
-## Software Architecture
-- **Pi**: Python 3, OpenCV, multi-threaded state machine.
-- **STM32**: Bare-metal C, utilizing HAL, hardware timers, and interrupts for zero-latency control.
+| Component | Part | Purpose |
+|-----------|------|---------|
+| **MCU** | STM32F411CEU6 (Black Pill) | Sole compute node; 100MHz, 512KB Flash |
+| **Line Array** | 8× TCRT5000 (digital GPIO) | Line following, intersection/junction detect |
+| **Colour Sensor** | TCS34725 RGBC (I2C1) | Ball colour ID (MODE A) + floor zone ID (MODE B) |
+| **IMU** | MPU6050 (I2C1) | Pitch/roll stabilization |
+| **Distance** | 3× VL53L0X ToF (I2C2) | Wall following, obstacle detection |
+| **Servo Driver** | PCA9685 (I2C1) | 15× MG90S PWM generation |
+| **Actuators** | 15× MG90S | 12 leg + arm + gripper + gate |
 
-## Computer Vision Approach
-Using OpenCV, frames will undergo perspective transformation. Line following will rely on contour extraction and centroid calculation. Ball detection will use HSV color filtering (Red, Blue, Green) masked with Hough Circle Transforms for shape validation. 
+## Embedded Perception Approach
+Two dedicated sensors replace the camera+Pi vision pipeline:
+
+**8-Channel TCRT5000 IR Array (GPIO PA0–PA7):**
+- Digital HIGH = white/reflective; LOW = black
+- Weighted centroid algorithm → steering error (−3.5 to +3.5)
+- Intersection detection: ≥6 sensors active for ≥3 consecutive 20ms cycles
+- Sub-0.1ms read latency — 200× faster than camera frame processing
+
+**TCS34725 RGBC Colour Sensor (I2C1, arm tip):**
+- MODE A (arm 0°): Reads ball colour at pedestal → stores `stored_ball_color` in Flash
+- MODE B (arm −70°): Reads floor colour zone at 3-way junction for branch selection
+- Colour classification: normalised R/G/B channel ratio algorithm
+- Non-blocking 50ms integration; effective 10Hz colour updates
 
 ## STM32 Approach
-The STM32 acts as a real-time coprocessor. It accepts `Target Velocity` and `Target Heading` commands over UART. It processes a continuous gait generator (e.g. Trotting gait), calculates the Inverse Kinematics for all 12 joints, and updates the PCA9685 via I2C at 50Hz.
+The STM32F411 is the complete system controller. It accepts sensor inputs directly and produces servo commands. It runs an 18-state Mission Hierarchical FSM covering all four subtasks, a PD line follower, IK solver, gait generator, and IMU stabilization — all within a 50Hz (20ms) deterministic loop.
 
 ## Locomotion Approach
-A static crawl gait (moving one leg at a time) ensures maximum stability during the grid search and object retrieval phases. A dynamic trot gait (diagonal pairs) can be engaged for faster traversal during straight corridors if stability margins permit.
+Crawl gait exclusively (one leg swinging at a time, 3 feet always in stance). Bezier foot trajectory with 2.0s cycle time. MG90S servos at 6V provide adequate torque for crawl + pushing within mass budget.
 
 ## Mechanical Design
-The chassis will be structurally optimized for a low center of gravity. The 2-DOF gripper is front-mounted independently of the legs to ensure the gait kinematics are not disturbed during grasping.
+Low-CoG chassis (battery at bottom). 2-DOF gripper arm carries the TCS34725 sensor and adjusts to two read angles. Passive PETG bumper for obstacle pushing.
 
 ## Communication
-A custom UART protocol at 115200 baud will bridge the Pi and STM32, utilizing explicit framing, sequence numbers, and CRC8 for robust error checking.
+All I2C internal. No external communication. Debug UART (dev only, disconnected at competition).
 
 ## Power
-A 3S LiPo battery provides 11.1V. A 10A UBEC steps this down to 5V exclusively for the servos. A separate, isolated 5V 5A switching regulator powers the Raspberry Pi to prevent servo-induced voltage dips from crashing the compute layer.
+2S LiPo (7.4V). Simplified two-rail distribution:
+- 5V/15A BEC → Servos
+- STM32 VBUS → 3.3V LDO → Logic and sensors
+
+Estimated runtime: ~35 minutes with 1300mAh (up from 24 min — Pi removed saves 1.5A).
 
 ## Safety
-- Software Heartbeat (500ms timeout stops all motors).
-- Physical battery disconnect switch.
-- Current-limiting fuses on the servo rail.
+- Line lost watchdog (all GPIO LOW for >3s → SAFE_STOP).
+- IMU tilt watchdog (>30° → emergency servo stop).
+- Low battery ADC monitor.
+- I2C auto-reinit on bus hang.
+- Flash EEPROM emulation for ball colour survival across resets.
 
 ## Testing
-1. **Component**: Verify each sensor individually.
-2. **Subsystem**: Test the quadruped gait on a suspension rig.
-3. **Integration**: Verify Pi-STM32 UART packet integrity.
-4. **System**: Full competition circuit simulation.
+1. **Component**: TCS34725 colour accuracy (paper samples); line array centroid verification.
+2. **Subsystem**: Single-leg loaded crawl; gait stability; wall following in corridor.
+3. **Integration**: Full state machine run through all 4 subtasks.
+4. **System**: Full competition circuit simulation ×3 runs.
 
 ## Risk Management
+
 | Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Servo Overload / Brownout | High | High | Use 10A UBEC, monitor voltage |
-| Odometry Drift | Medium | Medium | Use ToF sensors for wall distance feedback |
-| OpenCV false positives | Medium | High | Rigorous HSV calibration and shape constraints |
+|------|-------------|--------|-----------|
+| MG90S torque marginal | High | Critical | Mass <550g; crawl only; 6V; MG996R backup |
+| TCS34725 ambient light error | Medium | High | Built-in LED; gain tuning; 2-min prep calibration |
+| IR array dirt/contamination | Medium | Medium | Clean before run; digital threshold pots |
+| Ball colour memory lost on restart | Low | Critical | STM32 Flash write after Task 1 |
 
 ## Development Methodology
-Agile, phase-based development. Teams will independently develop the Vision, Embedded, and Mechanical systems against rigid interface contracts, followed by a dedicated Integration phase.
+Phase-based. Team B (Embedded) handles all firmware including state machine. Team C (Mechanical) handles chassis, arm geometry, and sensor bracket design. Integration phase validates full state machine run.
 
 ## Team Responsibilities
-- **Team A (Vision & Pi)**: OpenCV, state machine, planning.
-- **Team B (Embedded)**: STM32, IK, sensors, PWM.
-- **Team C (Mechanical)**: CAD, printing, assembly, servo tuning.
+- **Team B (Embedded)**: STM32 firmware — IK, gait, state machine, all sensor drivers, Flash persistence
+- **Team C (Mechanical)**: CAD, 3D printing, servo tuning, line array bracket, TCS34725 arm mount, bumper
 
 ## Timeline
-- **Weeks 1-2**: Hardware Bring-Up & CAD.
-- **Weeks 3-4**: Locomotion & Vision Development.
-- **Week 5**: Pi-STM32 Integration.
-- **Week 6**: Full Task Circuit Testing & Optimization.
+- **Weeks 1–2**: Hardware bring-up, CAD, sensor brackets
+- **Weeks 3–4**: Locomotion + line following + colour sensor validation
+- **Week 5**: Full state machine + task integration
+- **Week 6**: Full circuit testing + optimisation
 
 ## Expected Performance
-The robot is expected to complete the circuit within 6-8 minutes, well under the 15-minute limit, maintaining a 95%+ success rate in ball grasping due to the dedicated gripper design.
+Target completion under 10 minutes. 35+ minute battery runtime. >95% colour classification accuracy with pre-competition calibration.
 
 ## Success Criteria
-The robot reliably executes the BREACH PROTOCOL circuit 3 times in a row without human intervention, maintaining stability and accurately identifying color zones.
+Robot reliably executes all 4 BREACH PROTOCOL subtasks 3 times in a row without human intervention.

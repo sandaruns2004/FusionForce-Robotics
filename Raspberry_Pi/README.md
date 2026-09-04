@@ -1,6 +1,19 @@
 # Raspberry Pi Workflow & Curriculum
 
-## Introduction
+> [!WARNING]
+> **⚠️ ARCHIVED — Design Change Notice**
+>
+> The **Raspberry Pi 4B has been removed** from the RUNNER-4 design. All perception and decision-making has been moved to the **STM32F411CEU6** using embedded sensors:
+> - **03_camera** and **04_opencv** → replaced by [docs/SENSOR_PERCEPTION.md](../docs/SENSOR_PERCEPTION.md) (TCS34725 + TCRT5000)
+> - **05_perception** → replaced by [docs/SENSOR_PERCEPTION.md](../docs/SENSOR_PERCEPTION.md)
+> - **06_decision_making** (HFSM) → replaced by [docs/EMBEDDED_STATE_MACHINE.md](../docs/EMBEDDED_STATE_MACHINE.md) (C firmware)
+> - **07_uart** (Pi↔STM32 UART) → removed; no inter-CPU communication
+>
+> The modules in this directory remain here **for learning reference only**. They are not required for competition. The code and concepts are valid Python/OpenCV curriculum but are not part of the active RUNNER-4 codebase.
+
+---
+
+## Historical Context
 The Raspberry Pi 4B serves as the central "Brain" of the FusionForce robot. It handles computationally heavy tasks like computer vision (OpenCV) and high-level decision making (Hierarchical State Machine), while offloading real-time motion and reflex control to the STM32 microcontroller.
 
 ## System Workflow & Architecture

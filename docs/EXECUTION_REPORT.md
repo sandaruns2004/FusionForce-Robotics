@@ -14,26 +14,32 @@ The repository has been restructured. The `Task/` directory contains authoritati
 
 | Task Category | Status | Notes |
 |---------------|--------|-------|
-| Documentation Overhaul | **IN PROGRESS** | Technical Blueprints and Checklists generated. |
-| Hardware Acquisition | **NOT STARTED** | Requires BOM validation against final mechanical design. |
-| STM32 Firmware | **NOT STARTED** | Bare-metal repository structure to be created. |
-| Pi Vision Logic | **NOT STARTED** | Needs camera mount testing. |
-| Mechanical Assembly | **NOT STARTED** | CAD for gripper and chassis needs finalization. |
+| Documentation Overhaul | **COMPLETE** | Updated for single-STM32 + sensor architecture. |
+| Hardware Acquisition | **NOT STARTED** | Requires BOM validation: STM32F411, TCRT5000 array, TCS34725, MG90S ×15. |
+| STM32 Firmware | **NOT STARTED** | Bare-metal repo structure to be created (F411 target). |
+| Sensor Integration | **NOT STARTED** | TCRT5000 array (GPIO) + TCS34725 (I2C1) bring-up and calibration. |
+| Mechanical Assembly | **NOT STARTED** | CAD for gripper arm with TCS34725 tip mount + line array bracket. |
 | System Integration | **BLOCKED** | Depends on all subsystems. |
 
 ## Detailed Development Phases
 
 ### 1. Hardware Bring-Up (NOT STARTED)
-- Validate 3S LiPo battery and 10A UBEC voltages.
-- Flash simple blink script to STM32.
-- Boot Raspberry Pi and SSH over local network.
+- Validate 2S LiPo battery and 5V/15A BEC voltages.
+- Flash simple blink script to STM32F411CEU6.
+- I2C bus scan: verify PCA9685 (0x40), MPU6050 (0x68), TCS34725 (0x29) on I2C1.
+- VL53L0X XSHUT remap: verify 0x30, 0x31, 0x32 on I2C2.
+- Line array GPIO: verify PA0–PA7 read correctly over white/black surface.
 - **Status**: NOT STARTED
 
 ### 2. Firmware Development (NOT STARTED)
-- Setup STM32CubeIDE project.
-- Configure I2C, UART, and PWM timers.
-- Write PCA9685 driver.
-- Implement Inverse Kinematics math.
+- Setup STM32CubeIDE project (target: STM32F411CEU6).
+- Configure I2C1, I2C2, TIM2 (50Hz), GPIO PA0–PA7 (line array), PC0 (TCS34725 LED).
+- Write and test all sensor drivers: PCA9685, MPU6050, VL53L0X, TCS34725, LineArray.
+- Implement Inverse Kinematics math (verified against known foot positions).
+- Implement crawl gait generator (Bezier, FL→BR→FR→BL).
+- Implement 18-state Mission State Machine.
+- Implement PD line follower from 8-sensor centroid.
+- Implement Flash EEPROM emulation for ball colour persistence.
 - **Status**: NOT STARTED
 
 ### 3. Raspberry Pi Development (NOT STARTED)
@@ -43,16 +49,24 @@ The repository has been restructured. The `Task/` directory contains authoritati
 - Develop the High-Level Finite State Machine (HFSM).
 - **Status**: NOT STARTED
 
-### 4. Mechanical Development (NOT STARTED)
+### 3. Mechanical Development (NOT STARTED)
 - 3D Print chassis and leg components.
-- Assemble 12 servos into legs.
-- Mount front 2-DOF gripper and bumper plate.
+- Assemble 12× MG90S servos into legs.
+- Print and fit 2-DOF gripper arm with TCS34725 tip mount and light shroud.
+- Print and fit line array bracket (front-underside, 5–8mm floor clearance).
+- Mount passive PETG bumper plate (front-bottom).
+- **Status**: NOT STARTED
+
+### 4. Sensor Calibration (NOT STARTED)
+- Tune TCRT5000 threshold potentiometers (black/white surfaces).
+- Calibrate TCS34725 colour classification ratios under arena lighting.
+- Calibrate arm servo MODE A (0°) and MODE B (−70°) PWM constants.
 - **Status**: NOT STARTED
 
 ### 5. Integration (BLOCKED)
-- Connect Pi UART to STM32 UART.
-- Send synthetic command from Pi and verify STM32 servo response.
-- Validate ground sharing between logic and power rails.
+- Connect all sensors to STM32 (I2C1, I2C2, GPIO PA0–PA7).
+- Validate all 15 servo channels respond to state machine commands.
+- Test full 50Hz loop with DWT timing: verify <18ms.
 - **Status**: BLOCKED (Waiting on Subsystems)
 
 ### 6. Testing & Debugging (BLOCKED)
