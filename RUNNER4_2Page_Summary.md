@@ -5,11 +5,11 @@
 
 ## Overall Strategy
 
-RUNNER-4 is a 12-DOF autonomous quadruped robot designed to complete four sequential subtasks: grid navigation with ball pickup, curved wall-following with gap handling, obstacle pushing, and colour-based ball sorting. The design prioritises **reliability over speed**, using a slow crawl gait (one leg swinging at a time) that guarantees static stability with three feet always on the ground. A **single-MCU architecture** places all perception, mission decision-making, and real-time motor control on one STM32F411CEU6. An 8-channel TCRT5000 IR line array handles line following and intersection detection; a TCS34725 RGBC colour sensor (mounted on the gripper arm tip) handles ball colour identification and floor zone detection in dual-mode. Three VL53L0X ToF sensors handle wall-following and obstacle detection in corridors. The robot is powered by a **3S LiPo (11.1V, 2200mAh, 60C)** for high-current headroom and extended runtime.
+RUNNER-4 is a 12-DOF autonomous quadruped robot designed to complete four sequential subtasks: grid navigation with ball pickup, curved wall-following with gap handling, obstacle pushing, and colour-based ball sorting. The design prioritises **reliability over speed**, using a slow crawl gait (one leg swinging at a time) that guarantees static stability with three feet always on the ground. A **single-MCU architecture** places all perception, mission decision-making, and real-time motor control on one STM32F411CEU6. An 8-channel TCRT5000 IR line array handles line following and intersection detection; a TCS34725 RGBC colour sensor (mounted on the gripper arm tip) handles ball colour identification and floor zone detection in dual-mode. Three VL53L0X ToF sensors handle wall-following and obstacle detection in corridors. The robot is powered by a **2S LiPo** to save weight, with a dedicated 5V/15A BEC providing high-current headroom for the actuators.
 
 ## Mechanical Design
 
-The robot uses a **4-leg configuration with 3 joints per leg** (coxa/hip yaw, femur/hip pitch, tibia/knee pitch), totalling 12-DOF for locomotion. Proposed link lengths are L_coxa = 25 mm, L_femur = 50 mm, L_tibia = 55 mm. The body uses a **3-tier deck** construction (~160 × 140 mm): battery at bottom (lowest centre of mass), STM32 + PCA9685 at mid-level, and Raspberry Pi at top. A 2-servo **arm + gripper** at the front reaches the 5 cm ball pedestal, grasps the 40 mm ball, and deposits it into an **internal belly compartment** with a **servo-controlled gate** for secure storage and gravity-assisted release. A **passive front bumper plate** provides the pushing surface for Subtask 3, using the quadruped's leg force with no additional actuators. Target standing footprint: ≤ 250 × 250 mm. Estimated total mass: ~550 g. Material: 3D-printed PETG.
+The robot uses a **4-leg configuration with 3 joints per leg** (coxa/hip yaw, femur/hip pitch, tibia/knee pitch), totalling 12-DOF for locomotion. Proposed link lengths are L_coxa = 25 mm, L_femur = 50 mm, L_tibia = 55 mm. The body uses a **2-tier deck** construction (~160 × 140 mm): battery at bottom (lowest centre of mass), and STM32 + PCA9685 at the top level to save weight. A 2-servo **arm + gripper** at the front reaches the 5 cm ball pedestal, grasps the 40 mm ball, and deposits it into an **internal belly compartment** with a **servo-controlled gate** for secure storage and gravity-assisted release. A **passive front bumper plate** provides the pushing surface for Subtask 3, using the quadruped's leg force with no additional actuators. Target standing footprint: ≤ 250 × 250 mm. Estimated total mass: ~550 g. Material: 3D-printed PETG.
 
 ## Sensors
 
@@ -48,14 +48,14 @@ All driven by a **single PCA9685** 16-channel PWM servo driver (15/16 channels u
 
 **Key algorithmic innovation**: The wall gap rejection filter distinguishes actual wall gaps from noise by requiring 3+ consecutive readings above threshold before switching to single-wall following mode, preventing the robot from steering into gaps.
 
-**Vision approach**: Pure OpenCV (no deep learning). HSV colour space segmentation provides lighting-robust detection. Ball colour stored in memory variable `stored_ball_color` from Subtask 1, recalled in Subtask 4.
+**Perception approach**: No camera or Raspberry Pi is used to eliminate boot delays and save weight. We rely entirely on the 8-channel IR array for line following and the TCS34725 sensor for ball and floor color classification. The ball color is persisted in Flash EEPROM to survive restarts.
 
 ## Task Delegation
 
 | Team | Responsibility | Deliverables |
 |------|---------------|-------------|
 | **Mechanical** | Body + leg CAD; 3D printing; arm with TCS34725 tip mount; line array bracket; bumper | SolidWorks assemblies; printed/assembled robot |
-| **Electronics** | Power distribution; BEC selection (3S input); wiring harness; battery monitoring ADC | Tested power system; wiring diagrams |
+| **Electronics** | Power distribution; BEC selection (2S input); wiring harness; battery monitoring ADC | Tested power system; wiring diagrams |
 | **STM32 Firmware** | IK solver; gait engine; IMU; all sensor drivers (TCRT5000+TCS34725+VL53L0X); state machine | C firmware; walking + full sensor test results |
 | **Integration** | End-to-end testing; sensor calibration; competition prep; 2-min calibration routine | Test reports; competition checklist |
 
@@ -67,7 +67,7 @@ TCS34725 (I2C1, arm tip) ──┐                               │
 MPU6050  (I2C1)  ────────┤→ [STM32F411CEU6] → [PCA9685] → 15×MG90S
 3×VL53L0X (I2C2) ────────┘   (Perception+FSM+IK+Gait+50Hz)
 
-Power: 3S LiPo (11.1V, 2200mAh, 60C) → 5V/15A BEC (Servos) + 5V/1A Buck (STM32) + 3.3V LDO (Logic)
+Power: 2S LiPo → 5V/15A BEC (Servos) + 3.3V LDO (Logic)
 ```
 
 ## Key Design Decisions
@@ -78,6 +78,6 @@ Power: 3S LiPo (11.1V, 2200mAh, 60C) → 5V/15A BEC (Servos) + 5V/1A Buck (STM32
 | Ball mechanism | 2-servo arm + gripper | Ball on 5cm pedestal requires active reach |
 | Perception | TCRT5000 array + TCS34725 | Sub-ms line reads; dual-mode colour sensor replaces camera+Pi |
 | Pushing | Passive bumper | Zero additional actuators; high reliability |
-| **Battery** | **3S LiPo 2200mAh 60C** | 11.1V; 132A burst capable; ~60 min runtime; no brownout risk |
+| **Battery** | **2S LiPo** | Reduced weight; Pi removed saves 1.5A; ~37 min runtime; no brownout risk |
 
-**Estimated runtime**: ~60 min (3S 2200mAh @ 11.1V) — **4× the 15-min competition limit**. **Top risk**: MG90S torque margin. **Mitigation**: strict mass control; backup path to MG996R hybrid.
+**Estimated runtime**: ~37 min (2S LiPo) — easily covering the 15-min competition limit. **Top risk**: MG90S torque margin. **Mitigation**: Strict mass control and exclusive use of the crawl gait.

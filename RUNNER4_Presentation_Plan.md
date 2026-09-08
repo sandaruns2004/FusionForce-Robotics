@@ -59,9 +59,7 @@
 - **Slide Content**: Project RUNNER-4, Team FusionForce, Event & Date.
 - **Suggested Visual**: High-quality 3D CAD render of the RUNNER-4 robot on the title screen, with team and competition logos.
 - **Speaker Script**: 
-  - **Greeting**: Welcome the evaluators and introduce the team (FusionForce).
-  - **Introduction**: State the project name (RUNNER-4).
-  - **Team**: Briefly introduce each team member and their core role.
+  - *"Good morning evaluators, and welcome. We are Team FusionForce, and today we are excited to present our final design for Project RUNNER-4. Before we begin, I'd like to quickly introduce the team: Minura and Thilishan lead our Mechanical Design, Pulina and Thushanthan handle Electronics and Power, Sandaru and Pulina are responsible for Control Systems and Software, while Minura and Thushanthan spearhead our Testing and Validation."*
 
 ### Slide 2: Problem Statement (Speaker A - 0:30)
 - **Slide Content**: Fully autonomous navigation of 4 distinct subtasks, strict 250mm footprint limit, 15-minute maximum time limit.
@@ -73,64 +71,43 @@
 - **Slide Content**: Crawl gait for maximum stability, centralized control via single STM32, 8-channel IR array for robust line following, arm-mounted sensor for direct color detection, passive pushing mechanism.
 - **Suggested Visual**: Collage of key components (STM32 board, IR array, side-profile sketch of a quadruped walking).
 - **Speaker Script**: 
-  - **Movement**: We chose a crawl gait to maximize stability over speed.
-  - **Compute**: A single STM32 microcontroller handles both perception and decision-making for a lightweight, unified system.
-  - **Vision vs. IR**: We opted for an 8-channel IR array over a camera for line following, reducing computational overhead and complexity.
-  - **Color Detection**: A TCS34725 color sensor is mounted directly on the arm tip for close-range color detection of both the ball and the drop-off zones.
-  - **Pushing**: We are using a passive pushing mechanism (bumper) to save weight and complexity.
+  - *"Our overall strategy for RUNNER-4 prioritizes reliability and stability over raw speed. For locomotion, we've implemented a crawl gait to ensure three feet are always securely on the ground. Computationally, we've moved away from heavy processors like a Raspberry Pi, instead unifying perception, decision-making, and control onto a single STM32 microcontroller. To make this possible, we replaced complex camera vision with a fast 8-channel IR array for line following and a precision color sensor mounted directly on the gripper arm. Finally, to keep the design lightweight and simple, we're using a passive front bumper for the pushing task rather than adding extra motors."*
 
 ### Slide 4: System Architecture (Speaker B - 0:30)
 - **Slide Content**: Central MCU: STM32F411, I2C1 Bus: Actuators, IMU, Color Sensor, I2C2 Bus: ToF Wall Sensors, Split Power Tree: 3.3V Logic / 5V Actuators.
 - **Suggested Visual**: System Architecture Block Diagram showing the STM32 in the center, arrows pointing to I2C1, I2C2, and GPIO, and color-coded power delivery paths.
 - **Speaker Script**: 
-  - **Diagram Focus**: Point to the system block diagram.
-  - **Microcontroller**: Explain the central role of the STM32F411.
-  - **Buses**: I2C1 handles actuators (PCA9685), IMU (MPU6050), and the color sensor. I2C2 is dedicated to the three VL53L0X Time-of-Flight sensors for wall detection.
-  - **Direct GPIO**: PA0-PA7 reads the line array directly.
-  - **Power Tree**: Highlight the split power strategy (logic via 3.3V LDO, actuators via 5V/15A BEC).
+  - *"Taking a look at our system architecture diagram, everything centers around the STM32F411 microcontroller. We've carefully managed our data buses to prevent bottlenecks. The I2C1 bus handles our actuator driver, the IMU, and the color sensor, while we've dedicated the I2C2 bus entirely to our three Time-of-Flight wall sensors. Our 8-channel line array is read directly via fast GPIO pins. Crucially, as you can see at the bottom, our power tree is completely split: a 3.3-volt LDO provides clean power to the logic and sensors, while a heavy-duty 5-volt BEC provides dedicated, high-current power exclusively to the servos."*
 
 ### Slide 5: Actuators (Speaker C - 0:40)
 - **Slide Content**: 15x MG90S Micro Servos, Torque Feasibility: 1.53 kg·cm required (2.2 kg·cm max), Driven by a single PCA9685 board.
 - **Suggested Visual**: Photo of the MG90S servo and a simple bar chart comparing "Required Torque" vs "Max Torque".
 - **Speaker Script**: 
-  - **Hardware**: Mention the 15x MG90S servos.
-  - **Feasibility**: Present the torque analysis (2.2 kg·cm max torque vs 1.53 kg·cm required per joint).
-  - **Gait Choice**: Explain why we use a crawl gait instead of a trot—to ensure servos are not overstressed and to maintain static stability.
-  - **Driver**: Driven by a single PCA9685 board to simplify wiring.
+  - *"For actuation, RUNNER-4 uses a total of 15 MG90S micro servos, all driven by a single PCA9685 board to simplify our wiring harness. During our design phase, we performed a strict torque analysis. We found that our joints require a maximum of 1.53 kilogram-centimeters of torque, which sits comfortably below the MG90S's 2.2 maximum rating. However, this safety margin is only valid for a crawl gait where only one leg lifts at a time. Attempting a trot gait would overstress these motors, which firmly validated our decision to use the slower, statically stable crawl gait."*
 
 ### Slide 6: Sensors (Speaker C - 0:50)
 - **Slide Content**: 8-ch TCRT5000: Line & intersection tracking, TCS34725: Ball & floor zone color sensing, 3x VL53L0X ToF: Wall & gap detection, MPU6050 IMU: Body stabilization.
 - **Suggested Visual**: Bottom-up or top-down drawing of the robot with bright markers pointing to where the IR array, ToF sensors, and Color sensor are mounted.
 - **Speaker Script**: 
-  - **Line Following**: 8-channel TCRT5000 array for precise line, intersection, and junction detection.
-  - **Color Sensing**: Dual-purpose TCS34725 sensor on the arm tip (used for ball color in Task 01 and floor zone color in Task 04).
-  - **Obstacle/Wall Detection**: 3x VL53L0X ToF sensors for wall and gap detection (Tasks 02 and 03).
-  - **Stabilization**: MPU6050 IMU.
-  - **Visual**: Point to the sensor placement diagram.
+  - *"Here you can see our sensor placement diagram. Underneath the front chassis, we have an 8-channel TCRT5000 IR array which gives us high-resolution line and intersection tracking. On the tip of the arm is our TCS34725 color sensor; we cleverly use this one sensor for two purposes: reading the ball color when the arm is raised, and reading the floor sorting zones when the arm is angled down. For spatial awareness in the corridors, we mounted three Time-of-Flight sensors on the front left, right, and center. Lastly, an IMU sits directly at the center of mass to monitor body tilt during the pushing task."*
 
 ### Slide 7: Mechanical Design (Speaker B - 1:00)
 - **Slide Content**: 12-DOF Quadruped chassis, 3D-printed PETG construction, optimized leg geometry, compliant with 250mm footprint.
 - **Suggested Visual**: 2D kinematic diagram of a single leg (link lengths & joint angles) next to a top-down CAD view with a 250x250mm bounding box overlay.
 - **Speaker Script**: 
-  - **Chassis**: Discuss the 12-DOF quadruped design.
-  - **Geometry**: Explain the leg geometry and link lengths chosen for the required stride and ground clearance.
-  - **Compliance**: Show body dimensions, emphasizing strict compliance with the 250mm footprint rule.
-  - **Materials**: Highlight the use of 3D-printed PETG for a balance of durability and weight savings.
+  - *"For the mechanical design, we built a 12-DOF quadruped chassis from 3D-printed PETG. This material gives us the perfect balance of durability and weight savings, keeping our total mass under 550 grams. The leg geometry and specific link lengths were carefully optimized to provide sufficient ground clearance for obstacles while ensuring a stable stride. Crucially, as you can see in the footprint overlay, our design fits entirely within a 250 by 250-millimeter bounding box, maintaining strict compliance with the competition's size constraints."*
 
 ### Slide 8: Ball Mechanism (Speaker B - 0:40)
 - **Slide Content**: 2-Servo arm & gripper assembly, internal compartment with secure servo gate, replaces scoop mechanisms.
 - **Suggested Visual**: Zoomed-in CAD render of the 2-servo arm and gripper holding a ball, with a transparent view showing the internal storage compartment.
 - **Speaker Script**: 
-  - **Design**: Describe the 2-servo arm and gripper design.
-  - **Storage**: Explain how the ball is secured in the internal compartment using a servo gate.
-  - **Design Choices**: Detail why a simple scoop was rejected (e.g., wouldn't work with a 5cm pedestal or uneven terrain).
+  - *"Handling the ball in Task 1 required a reliable mechanism. We rejected a simple scoop design because it wouldn't be able to retrieve a ball sitting on a 5-centimeter pedestal or handle uneven terrain. Instead, we designed an active 2-servo arm with a custom gripper. This arm reaches out, securely grasps the 40-millimeter ball, and pulls it into an internal belly compartment. Once inside, a third servo controls a gate that securely locks the ball in place for the remainder of the circuit until it's time for a gravity-assisted drop-off in Task 4."*
 
 ### Slide 9: Pushing Mechanism (Speaker B - 0:20)
 - **Slide Content**: Passive front bumper design, utilizes "low stance" for maximum traction, eliminates active plow.
 - **Suggested Visual**: Side-profile illustration of the robot in its "low stance" making contact with the block obstacle.
 - **Speaker Script**: 
-  - **Passive Design**: Explain the passive front bumper design.
-  - **Strategy**: The robot adopts a "low stance" strategy during Task 03 to maximize traction and push the obstacle efficiently without needing an active plow.
+  - *"For the pushing task, we wanted to avoid the complexity and weight of an extra motor or active plow. Therefore, we integrated a passive flat bumper plate into the front chassis. When the ToF sensors detect the heavy obstacle in Task 3, the robot intentionally drops into a 'low stance'. This lowers our center of mass and maximizes leg traction, allowing the robot to use its own quadruped leg force to efficiently bulldoze the obstacle out of the way before standing back up."*
 
 ### Slide 10: Embedded Perception (Speaker C - 0:50)
 - **Slide Content**: Weighted centroid algorithm for lines, R/G/B ratio classification for color, temporal filtering for gaps, no Raspberry Pi delays.
@@ -154,40 +131,28 @@
 - **Slide Content**: Task 01: Grid, Task 02: Corridor Gap, Task 03: Corridor Obstacle, Task 04: Color Drop-off.
 - **Suggested Visual**: State machine flowchart linking Tasks 1 through 4 with their specific triggers and transitions.
 - **Speaker Script**: 
-  - **Flow**: Walk the audience through the state machine flow for a complete run.
-  - **Task 01**: Grid search, detect ball color, store it, grip ball.
-  - **Task 02**: Enter corridor, use ToF sensors for wall following, filter out the gap.
-  - **Task 03**: Enter second corridor, detect obstacle, lower stance, push it.
-  - **Task 04**: Reach sorting junction, read floor colors, drop the ball on the matching color, proceed to finish.
+  - *"Let's walk through the full circuit execution using our state machine flowchart. The run begins in Task 1 with a grid search; the robot finds the pedestal, reads and stores the ball's color in memory, and grips it. It then transitions to Task 2, entering the first corridor where it switches from line-following to ToF wall-following, carefully filtering out the large gap in the wall. In Task 3, it enters the second corridor, detects the obstacle, drops into a low stance, and pushes it clear. Finally, in Task 4, the robot reaches the sorting junction, angles its arm down to read the floor colors, and drops the ball in the zone that matches the color we stored back in Task 1, before proceeding to the finish line."*
 
 ### Slide 14: Power System (Speaker E - 0:20)
 - **Slide Content**: 2S LiPo Battery, 5V / 15A BEC (Servos), 3.3V LDO (Logic), ~37 min runtime.
 - **Suggested Visual**: Power tree schematic splitting the 2S LiPo into the 5V BEC and 3.3V LDO, emphasizing physical separation of rails.
 - **Speaker Script**: 
-  - **Source**: 2S LiPo battery.
-  - **Actuator Power**: 5V/15A BEC dedicated to the servos to prevent voltage drops.
-  - **Logic Power**: Separate 3.3V LDO for the STM32 and sensors for clean logic power.
-  - **Runtime**: Highlight the estimated 37-minute runtime, emphasizing the 1.5A power savings from removing the Raspberry Pi.
+  - *"Powering the entire system is a lightweight 2S LiPo battery. As mentioned earlier, keeping our power rails clean was a top priority. We use a heavy-duty 15-Amp BEC dedicated entirely to the servos to handle sudden current spikes without browning out the system. A completely separate 3.3-volt LDO provides smooth, isolated power to the STM32 and our sensors. Furthermore, by removing the Raspberry Pi from our architecture, we saved over 1.5 Amps of continuous current draw, giving RUNNER-4 an estimated runtime of 37 minutes—more than double the 15-minute competition limit."*
 
-### Slide 15: Task Delegation (Speaker E - 0:30)
-- **Slide Content**: Mechanical, Electronics & Power, Control Systems, Software & Algorithms, Testing & Validation.
+### Slide 15: Task Delegation
+- **Slide Content**: Mechanical (Minura, Thilishan), Electronics & Power (Pulina, Thushanthan), Control/Software (Sandaru, Pulina), Testing (Minura, Thushanthan).
 - **Suggested Visual**: A photo of the team with roles labeled, or a simple timeline/Gantt chart of development phases.
 - **Speaker Script**: 
-  - **Team Breakdown**: Present how the workload was divided among the 5 team members (mechanical, electronics, control, software, testing).
-  - **Timeline**: Briefly show the development timeline and milestones achieved.
+  - *"To achieve this within our timeframe, we divided the project into five core responsibilities based on our strengths. Minura and Thilishan handled the mechanical CAD and 3D printing. Pulina and Thushanthan designed the power distribution and wiring harnesses. Sandaru and Pulina developed the STM32 firmware, including the IK solver, state machine, and sensor algorithms. Finally, Minura and Thushanthan led our integration and testing phase. As you can see on our timeline, this parallel development allowed us to hit our milestones efficiently and leaves us with ample time for end-to-end testing."*
 
 ### Slide 16: Risks + Mitigation (Speaker E - 0:30)
 - **Slide Content**: Torque limits vs. Crawl Gait, Ambient Light vs. Shielding, False Intersections vs. Temporal Filters, Reboot Data Loss vs. Flash EEPROM.
 - **Suggested Visual**: Clean 2-column table with a "Warning" icon for risks and a "Checkmark" icon for mitigations.
 - **Speaker Script**: 
-  - **Identify Risks**: Address the top 5 risks identified (servo torque limits, ambient light affecting the TCS34725, false intersection triggers, losing ball color on restart, and loop timing overflows).
-  - **Solutions**: Explain the backup plans (crawl gait for torque, physical shielding for the color sensor, temporal filtering for intersections, Flash persistence for color, and strict timing analysis).
+  - *"We proactively identified five major risks and implemented strict mitigations for each. First, to avoid exceeding servo torque limits, we locked the robot into a crawl gait. Second, to prevent ambient light from throwing off our color sensor, we designed a custom physical shroud for the arm tip. Third, to prevent the IR array from misinterpreting noise as an intersection, we implemented temporal filtering in the code. Fourth, if the robot suffers a sudden power loss, we prevent data loss by actively saving the ball's color to the STM32's Flash EEPROM. Finally, to prevent control loop overflows, we rigorously profiled our code to guarantee it runs comfortably within our 50-Hertz window."*
 
 ### Slide 17: Conclusion (Speaker E - 0:20)
 - **Slide Content**: Design Focus: Reliability and simplicity, Ready for build/testing, Q&A Session.
 - **Suggested Visual**: Final action-shot photo or render of the robot gripping the ball, and large "Questions?" text.
 - **Speaker Script**: 
-  - **Philosophy**: Summarize the design philosophy (Reliability and simplicity over raw speed).
-  - **Confidence**: Reiterate confidence in the chosen approach.
-  - **Next Steps**: State readiness for the build and testing phase.
-  - **Close**: Thank the evaluators and open the floor for Q&A.
+  - *"In conclusion, RUNNER-4 is built on a philosophy of reliability and simplicity over raw speed. By streamlining our compute architecture, relying on robust embedded sensors, and prioritizing static stability, we have engineered a system that is highly resilient to the unpredictable nature of competition environments. We are fully confident in this design and are completely ready to move into the final build and testing phase. Thank you for your time, and we'd now like to open the floor to any questions."*
