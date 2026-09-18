@@ -22,16 +22,16 @@ firmware/
 │   ├── MPU6050/
 │   │   ├── mpu6050.h
 │   │   └── mpu6050.c            # IMU driver: raw read, complementary filter
-│   ├── TCS34725/                 ← NEW: Colour sensor driver
+│   ├── TCS34725/                 ← Colour sensor driver
 │   │   ├── tcs34725.h
 │   │   └── tcs34725.c           # I2C RGBC read, integration time, colour classify
-│   └── LineArray/                ← NEW: 8-channel IR line sensor driver
+│   └── LineArray/                ← 9-channel ADC+DMA IR line sensor driver
 │       ├── line_array.h
-│       └── line_array.c         # GPIO bitmask, weighted centroid, intersection detect
-├── Control/
-│   ├── kinematics.h / kinematics.c    # Forward & Inverse Kinematics (3-DOF per leg)
-│   ├── gait_generator.h / gait.c      # Bezier crawl gait trajectory (FL→BR→FR→BL)
-│   └── pid_posture.h / pid_posture.c  # IMU-based body pitch/roll compensation
+│       └── line_array.c         # ADC1 DMA circular, EMA filter, centroid, junction
+├── Motion/                       ← Replaces old Control/ folder
+│   ├── kinematics.h / kinematics.c    # 3-DOF geometric IK (L1=30 L2=60 L3=80mm)
+│   ├── gait_engine.h / gait_engine.c  # Trot gait: diagonal FL+BR/FR+BL, T=600ms
+│   └── arm_controller.h / arm_controller.c  # CH12 arm + CH13 grip + CH14 gate slew
 └── Navigation/                   ← NEW: Replaces entire Raspberry Pi Python layer
     ├── state_machine.h / state_machine.c  # Mission HFSM (18 states, all 4 subtasks)
     ├── line_follower.h / line_follower.c  # PD controller from 8-sensor centroid
@@ -45,11 +45,12 @@ firmware/
 if (update_flag) {
     update_flag = 0;
 
-    /* ─── PERCEPTION ─────────────────────────────────────────── */
-    // 1. Read 8-channel line array (GPIO poll — <0.1ms)
-    uint8_t line_bits = LineArray_Read();
-    float   line_error = LineArray_GetCentroid(line_bits);   // –3.5 to +3.5
-    bool    intersection = LineArray_IsIntersection();       // ≥6 active, ≥3 samples
+    /* ─── PERCEPTION ────────────────────────────────────────────────── */
+    // 1. Read 9-channel line array (ADC1 DMA circular — always running)
+    LA_Update(&la_result);      // EMA filter, centroid, junction detect
+    float   line_error   = la_result.error;       // -4.0 to +4.0
+    bool    intersection = la_result.is_junction; // >=6/9 sensors, >=3 cycles
+    bool    line_lost    = la_result.is_lost;
 
     // 2. Read IMU (I2C1 — ~1ms)
     MPU6050_Read(&pitch, &roll);
@@ -77,8 +78,8 @@ if (update_flag) {
     // 6. Apply IMU postural corrections to foot targets
     PID_ApplyPostureCorrection(pitch, roll, foot_targets);
 
-    // 7. Update gait phase → compute next foot positions
-    GaitGenerator_Update(Vx, Vy, Wz, foot_targets);
+    // 7. Update trot gait phase → compute next foot positions
+    GaitEngine_Update(sm_Vx, sm_Vy, sm_Wz, foot_targets);
 
     // 8. Solve Inverse Kinematics → 12 joint angles
     Kinematics_SolveAll(foot_targets, joint_angles);
@@ -86,12 +87,10 @@ if (update_flag) {
     // 9. Write PWM to PCA9685 via I2C1 (~2ms)
     PCA9685_WriteAllChannels(joint_angles);
 
-    /* ─── SAFETY ─────────────────────────────────────────────── */
-    // 10. Battery ADC check
-    batt_mv = ADC_ReadBatteryVoltage();
-
-    // 11. Safety watchdogs
-    Safety_Check(pitch, roll, line_bits, batt_mv);
+    /* ─── SAFETY ────────────────────────────────────────────────    */
+    // 10. Safety: IMU tilt > 20° -> SAFE_STOP
+    if (fabsf(pitch_deg) > 20.0f || fabsf(roll_deg) > 20.0f)
+        StateMachine_Transition(STATE_SAFE_STOP);
 }
 ```
 

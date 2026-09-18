@@ -12,37 +12,36 @@
 - `[ ]` Storage gate servo connected to PCA9685 CH14.
 - `[ ]` 3× VL53L0X ToF sensors connected to STM32 I2C2 (PB10/PB3); XSHUT pins on PB12, PB13, PB14.
 - `[ ]` MPU6050 IMU connected to STM32 I2C1 (PB6/PB7, address 0x68).
-- `[ ]` **8-channel TCRT5000 IR line array** connected to STM32 GPIO PA0–PA7 (digital input, pull-down).
+- `[ ]` **9-channel TCRT5000 IR line array** connected: S1-S8 to PA0-PA7 (ADC1 IN0-7), S9 to PB0 (ADC1 IN8). 10kΩ pull-up per channel.
 - `[ ]` **TCS34725 colour sensor** connected to STM32 I2C1 (PB6/PB7, address 0x29); LED control on PC0.
 - `[ ]` TCS34725 mounted securely on gripper arm tip with light-shielding shroud.
-- `[ ]` Line array mounted on front-underside bracket, 5–8mm above floor, centred on robot midline.
+- `[ ]` Line array mounted on front-underside bracket, **5mm above floor**, 80mm total width (10mm pitch), centred on robot midline.
 - `[ ]` Hardware kill switch installed on battery main positive line.
 - `[ ]` Battery voltage divider connected to PC1 (ADC) for low-battery monitoring.
 
 ## 2. STM32 Firmware (Complete System)
 - `[ ]` STM32CubeMX project created targeting **STM32F411CEU6** at 100MHz.
-- `[ ]` I2C1 (PB6/PB7, 400kHz) and I2C2 (PB10/PB3, 400kHz) configured.
-- `[ ]` GPIO PA0–PA7 configured as digital input with pull-down.
+- `[ ]` I2C1 (PB6/PB7, 400kHz) and I2C2 (PB10/PB3, 400kHz) configured with 4.7kΩ pull-ups.
+- `[ ]` ADC1 IN0-IN8 (PA0-PA7, PB0) configured for line array; DMA1 Stream0 CH0 circular, 144-word buffer.
 - `[ ]` GPIO PB12, PB13, PB14 configured as output (XSHUT pins).
 - `[ ]` GPIO PC0 configured as output (TCS34725 LED).
-- `[ ]` ADC1 CH11 (PC1) configured for battery monitoring.
+- `[ ]` ADC1 IN11 (PC1) configured for battery monitoring.
 - `[ ]` TIM2 configured for 50Hz (20ms) interrupt.
 - `[ ]` PCA9685 I2C communication verified (servo sweep test on all channels).
 - `[ ]` MPU6050 I2C reading verified (stable roll/pitch values).
 - `[ ]` VL53L0X XSHUT address remap verified (3 sensors at 0x30, 0x31, 0x32 confirmed by I2C scan).
-- `[ ]` **8-channel line array GPIO reading verified** (paper white/black test; correct sensors HIGH).
+- `[ ]` **9-channel line array ADC DMA reading verified** (analogue values respond to white/black surface; EMA filter stable).
 - `[ ]` **TCS34725 I2C driver working** (raw R/G/B/Clear values readable via debug UART).
 - `[ ]` **TCS34725 non-blocking integration** implemented (start → poll AVALID → read, no loop blocking).
 - `[ ]` **Colour classification algorithm verified** (Red/Green/Blue paper samples → >95% accuracy).
-- `[ ]` **Weighted centroid line following** verified on 30mm white line (centroid ≈ 3.5 when centred).
+- `[ ]` **Weighted centroid line following** verified on 30mm white line (centroid ≈4.0 when centred; error=0.0).
 - `[ ]` **Intersection detection** (≥6 sensors, ≥3 consecutive cycles) verified with paper cross pattern.
-- `[ ]` Inverse Kinematics (IK) math implemented and unit tested.
-- `[ ]` Crawl gait generator implemented (Bezier foot trajectory, FL→BR→FR→BL sequence).
-- `[ ]` Postural PID controller implemented (IMU pitch/roll → foot Z corrections).
-- `[ ]` **18-state Mission State Machine implemented** in C (all subtasks Task 1–4).
+- `[ ]` Inverse Kinematics (IK) implemented: `IK_L1_MM=30.0f`, `IK_L2_MM=60.0f`, `IK_L3_MM=80.0f`. Unit tested.
+- `[ ]` **Trot gait** implemented (`GaitEngine_Update`): diagonal FL+BR / FR+BL, T=600ms, step height 35mm.
+- `[ ]` **21-state Mission State Machine implemented** in C (all subtasks Task 1–4).
 - `[ ]` **`stored_ball_color` Flash EEPROM emulation** working (write after Task 1; read on boot; survives reset).
-- `[ ]` Arm position MODE A (0°) and MODE B (−70°) PWM constants calibrated and stored.
-- `[ ]` Safety watchdogs: tilt >30° → SAFE_STOP; line lost >3s → SAFE_STOP; battery <6.4V → halt.
+- `[ ]` Arm position MODE_A (0°) and MODE_B (160°) PWM constants calibrated and stored in `calibration.h`.
+- `[ ]` Safety watchdogs: IMU tilt >20° → SAFE_STOP; line lost >3s → SAFE_STOP; battery <6.4V → halt.
 - `[ ]` **50Hz loop timing profiled** with DWT counter — verified <18ms total with all sensors active.
 
 ## 3. Mechanical & Assembly
@@ -68,10 +67,10 @@
 | 2 | One-leg IK | Smooth foot positioning |
 | 3 | One-leg loaded | Supports 200g without stall |
 | 4 | 4-leg standing | Stable, within 250×250mm footprint |
-| 5 | Crawl walking + turning | 1m forward; 90° turn reliable |
-| 6 | IMU stabilisation | Level on ±5° tilted surface |
+| 5 | Trot walking + turning | 1m forward; 90° turn reliable; no toe drag |
+| 6 | IMU tilt watchdog | Triggers SAFE_STOP at >20° pitch; resets correctly |
 | 7 | Wall following (Task 2 corridor) | Centres in 30cm corridor; handles 1 gap |
-| 8 | **Line following** (8-sensor) | Follows 2m curved line without losing track |
+| 8 | **Line following** (9-sensor ADC) | Follows 2m curved line without losing track |
 | 9 | **Intersection detection** | Triggers correctly at paper cross; no false triggers on curves |
 | 10 | **Ball colour detection** (TCS34725 MODE A) | Correct colour for Red/Green/Blue ball; >95% accuracy |
 | 11 | **Floor zone detection** (TCS34725 MODE B) | Correct branch selection at paper 3-way junction |

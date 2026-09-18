@@ -1,62 +1,109 @@
-# RUNNER-4 Full Engineering Report — Implementation Plan
+# RUNNER-4 — Engineering Decisions & Implementation Status
+## FusionForce | EN2533 BREACH PROTOCOL
 
-## Repository Inspection Summary
+> This document records all resolved design decisions, confirmed hardware, and current implementation status. All inconsistencies from early planning have been resolved.
 
-After thorough inspection of the entire FusionForce-Robotics repository, here is what exists:
+---
 
-### Confirmed Implementation Status
+## ✅ Resolved Design Decisions
 
-| Component | Status | Key Findings |
-|-----------|--------|-------------|
-| **MCU** | ⚠️ **Inconsistency** | `Quadruped_Robot_Hardware_Plan.md` says **STM32F411CEU6**, but ALL `docs/` engineering specs reference **STM32F401CCEU**. The actual board needs physical verification. |
-| **Raspberry Pi** | ✅ Documented | Repository consistently specifies **Raspberry Pi 4B** (not Zero 2 W) |
-| **Servos** | ⚠️ **Inconsistency** | Hardware plan lists DS3218/DS3225; docs recommend **Hybrid MG996R + MG90**; CAD assembly (`quadruped-spider-2`) uses **12× SG90** servos. None use MG90S as the user prompt suggests. |
-| **Battery** | ⚠️ **Inconsistency** | Hardware plan says **3S LiPo**; user prompt specifies **2S LiPo**. Docs use 3S (11.1V). |
-| **PCA9685** | ✅ Confirmed | Single board, 14 channels used (12 leg + 2 arm), 2 spare |
-| **IMU** | ✅ Confirmed | MPU6050, on I2C1 bus |
-| **ToF Sensors** | ✅ Confirmed | 3× VL53L0X (Front/Left/Right), via TCA9548A mux or XSHUT |
-| **Camera** | ✅ Confirmed | Pi Camera Module 3, CSI interface, 640×480 @ 60 FPS |
-| **IPC Protocol** | ✅ Implemented | UART binary protocol with CRC8 — working Python code in `Raspberry_Pi/src/ipc_handler.py` |
-| **IK Solver** | ✅ Documented | C++ reference code with link lengths: Coxa=30mm, Femur=55mm, Tibia=60mm |
-| **Vision Pipeline** | ✅ Documented | OpenCV HSV segmentation, PD line following, Python reference code |
-| **State Machine** | ✅ Documented | HFSM with 6 states (STATE_0 through STATE_5) |
-| **Ball Mechanism** | ✅ Documented | 2-servo arm + gripper + ventral belly storage cage |
-| **Pushing** | ✅ Documented | Front bumper + lowered arm as pushing face |
-| **CAD Models** | ✅ Present | Two SolidWorks assemblies: spider-2 (SG90-based) and robot-7 (MG90-based) |
-| **Testing** | ✅ Documented | 4 integration test checklists |
-| **STM32 Firmware** | ❌ Not implemented | No actual C/C++ firmware code in repository |
-| **Vision Code** | ❌ Not implemented | Only reference snippets, no runnable vision pipeline |
-| **Gait Engine** | ❌ Not implemented | Only Bezier math documentation, no running code |
+All conflicts from early repository versions have been resolved and finalized:
 
-### Critical Issues Identified
-1. **MCU mismatch**: F411 vs F401 — must be resolved
-2. **Servo mismatch**: SG90 in CAD vs MG996R/MG90 hybrid in docs vs MG90S in user prompt vs DS3218 in hardware plan
-3. **Battery mismatch**: 3S in docs vs 2S in user prompt
-4. **Voltage mismatch**: 3S = 11.1V, but competition max is 24V DC (both compliant)
-5. **No actual firmware or vision code** — only documentation and one IPC handler module
+| Decision | Resolved Value | Notes |
+|----------|---------------|-------|
+| **MCU** | **STM32F411CEU6** Black Pill | 100MHz, Cortex-M4F, HW FPU, 512KB Flash, 128KB RAM |
+| **Raspberry Pi** | **Removed** | Single STM32 handles all perception + logic + motion |
+| **Computer Vision** | **Removed** | Replaced by TCS34725 (colour) + TCRT5000 IR (line) |
+| **Leg Servos** | **15× MG90S metal-gear** | 2.2 kg·cm @ 6V; plastic gear (SG90/DS3218) rejected |
+| **Coxa L1** | **30 mm** | Confirmed hardware dimension |
+| **Femur L2** | **60 mm** | Confirmed hardware dimension |
+| **Tibia L3** | **80 mm** | Confirmed hardware dimension |
+| **Max reach** | **140 mm** (L2+L3) | Min reach 20mm |
+| **Gait** | **Diagonal Trot** | T=600ms, step=35mm, duty=50%; crawl gait rejected (Bezier) |
+| **Battery** | **2S LiPo 7.4V** | ≥1300mAh, ≥25C; 6V BEC for servos, 3.3V LDO for logic |
+| **Line sensor** | **9× TCRT5000 analogue** | ADC1+DMA1, 80mm/10mm pitch, 16× oversample; 8-ch digital rejected |
+| **Arm MODE_B** | **160°** (down to floor) | Replaces -70° from early docs; CH12 tick=450 |
+| **State count** | **21 states** | Replaces 18 from early docs (added ERROR_RECOVERY + 2 task sub-states) |
+| **Start button** | **PC13** | Active LOW, internal pull-up; replaces PA0/Boot0 (conflict avoided) |
 
-## Proposed Deliverables
+---
 
-I will create 5 output files:
+## 📦 Implementation Status
 
-1. **`RUNNER4_Full_Engineering_Report.md`** — Comprehensive ~37-section report
-2. **`RUNNER4_2Page_Summary.md`** — Concise 2-page proposal
-3. **`RUNNER4_Presentation_Plan.md`** — 10-minute presentation structure
-4. **`RUNNER4_QA_Preparation.md`** — 25+ evaluator Q&A
-5. **`RUNNER4_Decision_Table.md`** — Final engineering decision table
+### ✅ Documentation — COMPLETE
+- `docs/` — 17 engineering documents, all updated to final hardware specs
+- `Mechanical/` — 7 assembly guides (chassis → calibration → maintenance)
+- `Robot_Curriculum/` — 4 levels, L1 Fundamentals → L4 Sensors & Integration (CV removed)
+- `README.md` — Root project README with architecture diagram and spec tables
+- `spider-robot-roadmap.md` — 7-phase implementation roadmap
 
-> [!IMPORTANT]
-> The report will reconcile all inconsistencies found in the repository and align with the user's prompt (MG90S servos, 2S LiPo, STM32 Black Pill) while clearly noting where repository documentation differs.
+### 🔧 Mechanical — In Progress
+- [ ] PETG parts printed and assembled
+- [ ] Leg link lengths verified: L1=30mm L2=60mm L3=80mm
+- [ ] 15-servo zeroing (Module 06) completed
 
-## Open Questions
+### 💻 Firmware — Pending
+- [ ] STM32CubeMX project: 100MHz, I2C1/2, ADC1 DMA, TIM2/3, USART1
+- [ ] PCA9685 driver (50Hz, angle→tick, `calibration.h`)
+- [ ] VL53L0X driver (XSHUT remap, EMA filter)
+- [ ] MPU6050 driver (complementary filter, 100Hz ISR)
+- [ ] TCS34725 driver (non-blocking, ratio classification)
+- [ ] Line array driver (ADC DMA, EMA, centroid, junction)
+- [ ] IK solver (`IK_L1=30 L2=60 L3=80`, right-side mirroring)
+- [ ] Trot gait engine (diagonal pairs, parabolic arc, velocity feedforward)
+- [ ] PD line follower (Kp=0.012, Kd=0.003)
+- [ ] PD wall follower (Kp=0.008, Kd=0.002)
+- [ ] 21-state Mission HFSM (all 4 tasks)
+- [ ] Flash EEPROM emulation (`stored_ball_color`)
+- [ ] Arm controller (CH12/13/14 slew, HOME/MODE_A/MODE_B positions)
+- [ ] UART debug interface (`servo_all`, `la_cal`, `tof_scan`, `imu_read`)
 
-> [!WARNING]
-> **STM32 Model**: The hardware plan says F411CEU6 but all docs say F401CCEU. The report will note both and recommend physical verification. Which chip do you actually have?
+---
 
-> [!IMPORTANT]
-> **Servo Decision**: The CAD uses SG90 (plastic gear, ~1.8 kg·cm). The docs recommend MG996R+MG90 hybrid. Your prompt says MG90S (metal gear, ~2.2 kg·cm). The report will analyze all three against torque requirements and make a recommendation.
+## 🗺️ Key File Map
 
-> [!IMPORTANT]
-> **Battery**: Your prompt says 2S LiPo (7.4V) but all existing docs use 3S LiPo (11.1V). 2S is lighter but may require a different BEC. The report will analyze both.
+| Need | File |
+|------|------|
+| Start here | [`README.md`](./README.md) |
+| Full technical spec | [`docs/TECHNICAL_BLUEPRINT.md`](docs/TECHNICAL_BLUEPRINT.md) |
+| IK + gait math | [`docs/LOCOMOTION_AND_KINEMATICS.md`](docs/LOCOMOTION_AND_KINEMATICS.md) |
+| All pin assignments | [`docs/PINOUT_AND_CONNECTIONS.md`](docs/PINOUT_AND_CONNECTIONS.md) |
+| State machine table | [`docs/EMBEDDED_STATE_MACHINE.md`](docs/EMBEDDED_STATE_MACHINE.md) |
+| IR + colour algorithms | [`docs/SENSOR_PERCEPTION.md`](docs/SENSOR_PERCEPTION.md) |
+| Servo zeroing procedure | [`Mechanical/06_calibration_and_zeroing/README.md`](Mechanical/06_calibration_and_zeroing/README.md) |
+| Pre-run checklist | [`Mechanical/07_maintenance_and_repair/README.md`](Mechanical/07_maintenance_and_repair/README.md) |
+| Project roadmap | [`spider-robot-roadmap.md`](./spider-robot-roadmap.md) |
+| Firmware architecture | [`docs/SOFTWARE_ARCHITECTURE.md`](docs/SOFTWARE_ARCHITECTURE.md) |
 
-Shall I proceed with generating all 5 deliverables?
+---
+
+## 📐 Hardware Quick Reference
+
+```
+Servo tick formula (50Hz, MG90S):
+  tick = 102 + (angle / 180.0) × 389
+  0°  = tick 102  (500µs)
+  90° = tick 307  (1500µs)
+  180°= tick 491  (2400µs)
+
+Arm positions:
+  CH12 HOME   = 90°  (tick 307)  — vertical, travel safe
+  CH12 MODE_A =  0°  (tick 102)  — horizontal forward, ball
+  CH12 MODE_B = 160° (tick 450)  — floor-pointing, zone ID
+  CH13 OPEN   = 60°  (tick 184)
+  CH13 CLOSE  = 115° (tick 286)
+  CH14 LOCKED =  0°  (tick 102)
+  CH14 OPEN   = 90°  (tick 307)
+
+IR centroid:
+  error = centroid - 4.0  (range -4.0 to +4.0)
+  error > 0 → line is RIGHT → Wz > 0 → turn right
+  error < 0 → line is LEFT  → Wz < 0 → turn left
+
+ToF thresholds:
+  TOF_BALL_APPROACH_MM  =  80  (Task 1 stop)
+  TOF_OBSTACLE_MM       = 150  (Task 3 detect)
+  TOF_WALL_TARGET_MM    = 150  (Task 2 setpoint)
+  TOF_GAP_THRESHOLD_MM  = 250  (gap confirmed)
+  TOF_PUSH_CLEARED_MM   = 300  (Task 3 success)
+```

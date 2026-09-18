@@ -19,25 +19,27 @@ This guide covers common issues encountered during development and testing of th
 
 ---
 
-## 3. 8-Channel TCRT5000 Line Array
+## 3. 9-Channel TCRT5000 IR Line Array (ADC1 DMA)
 
 ### Sensor Calibration Procedure
 1. Power on STM32 with debug UART connected.
-2. Place array over **plain black surface**. All 8 sensors should read `0x00`.
-   - If any sensor reads `1` over black: rotate that sensor's threshold potentiometer **clockwise** (increase threshold) until it reads `0`.
-3. Place array over **30mm white matte paper**. The sensors over the white region should read `1`.
-   - If sensors over white read `0`: rotate potentiometer **counter-clockwise** (decrease threshold) until they read `1`.
-4. Log centroid value: `centroid = sum(i × val[i]) / sum(val[i])`. When centred over the line, centroid should be approximately `3.5`.
-5. Slide array slowly sideways — verify smooth transition of active sensors.
+2. Place array over **plain black surface**. Send `la_cal black\r\n` via UART.
+   - All 9 normalised values should approach 0.0. If any stay above 0.1, check mounting height (should be 5mm).
+3. Place array over **30mm white matte paper**. Send `la_cal white\r\n` via UART.
+   - Active sensors over white should return normalised value > 0.8.
+4. Send `la_test\r\n`. When centred on line, centroid ≈ **4.0**. error ≈ 0.0.
+5. Slide array slowly sideways — verify smooth centroid transition, no discontinuities.
 
 ### Common Line Array Issues
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| All sensors read `1` regardless of surface | VCC too high or thresholds too low | Check VCC (3.3V or 5V per module spec); tighten threshold pots |
-| All sensors read `0` always | No power or GPIO pull-down active | Check sensor VCC; verify PA0–PA7 configured as INPUT, not OUTPUT |
-| Erratic readings at line edge | Sensor mounted too high (>10mm) | Lower array bracket to 5–8mm height |
-| Line lost mid-run | Line array vibrating loose | Tighten bracket screws; add vibration-damping foam strip |
+| All sensors return same high value | ADC DMA not started — `LA_Init()` not called | Verify `HAL_ADC_Start_DMA()` called in `App_Init()` |
+| All sensors return same low value | 10kΩ pull-ups missing or ADC reference wrong | Check pull-ups on PA0-PA7, PB0; verify VREF=3.3V |
+| Erratic readings at line edge | Sensor mounted too high (>8mm) or too low (<3mm) | Adjust bracket to exactly 5mm height |
+| Line lost mid-run | Line array vibrating loose | Tighten bracket screws; add vibration-damping foam |
+| `la_cal` not saving | Flash write failed | Verify Flash sector not write-protected; re-flash |
+| S9 (rightmost) not responding | PB0 not in ADC1 scan sequence in CubeMX | Re-check CubeMX: ADC1 regular channel 8 = PB0 IN8 |
 | Centroid stuck at 0 or 7 | All sensors on one side active | Robot is too far off-line; PD gain too low → increase Kp |
 | False intersection triggers | Wide curve activating 6+ sensors | Raise intersection threshold from 6 to 7 sensors |
 

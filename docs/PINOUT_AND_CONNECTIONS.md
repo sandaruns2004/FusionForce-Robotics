@@ -11,14 +11,15 @@
 
 | STM32 Pin | Function | Connected To | Voltage | Notes |
 |-----------|----------|-------------|---------|-------|
-| **PA0** | GPIO IN — Line S1 | TCRT5000 Ch1 OUT | 3.3V | Leftmost IR sensor |
-| **PA1** | GPIO IN — Line S2 | TCRT5000 Ch2 OUT | 3.3V | |
-| **PA2** | GPIO IN — Line S3 | TCRT5000 Ch3 OUT | 3.3V | |
-| **PA3** | GPIO IN — Line S4 | TCRT5000 Ch4 OUT | 3.3V | Left-centre |
-| **PA4** | GPIO IN — Line S5 | TCRT5000 Ch5 OUT | 3.3V | Right-centre |
-| **PA5** | GPIO IN — Line S6 | TCRT5000 Ch6 OUT | 3.3V | |
-| **PA6** | GPIO IN — Line S7 | TCRT5000 Ch7 OUT | 3.3V | |
-| **PA7** | GPIO IN — Line S8 | TCRT5000 Ch8 OUT | 3.3V | Rightmost IR sensor |
+| **PA0** | ADC1_IN0 — Line S1 | TCRT5000 S1 OUT | 3.3V | Leftmost IR sensor (analogue) |
+| **PA1** | ADC1_IN1 — Line S2 | TCRT5000 S2 OUT | 3.3V | |
+| **PA2** | ADC1_IN2 — Line S3 | TCRT5000 S3 OUT | 3.3V | |
+| **PA3** | ADC1_IN3 — Line S4 | TCRT5000 S4 OUT | 3.3V | Left-centre |
+| **PA4** | ADC1_IN4 — Line S5 | TCRT5000 S5 OUT | 3.3V | Centre sensor |
+| **PA5** | ADC1_IN5 — Line S6 | TCRT5000 S6 OUT | 3.3V | Right-centre |
+| **PA6** | ADC1_IN6 — Line S7 | TCRT5000 S7 OUT | 3.3V | |
+| **PA7** | ADC1_IN7 — Line S8 | TCRT5000 S8 OUT | 3.3V | |
+| **PB0** | ADC1_IN8 — Line S9 | TCRT5000 S9 OUT | 3.3V | Rightmost IR sensor |
 | **PA9** | USART1 TX | Debug PC (RX) | 3.3V | **Dev only — disconnect at competition** |
 | **PA10** | USART1 RX | Debug PC (TX) | 3.3V | **Dev only — disconnect at competition** |
 | **PB3** | I2C2 SDA | 3× VL53L0X SDA | 3.3V | ToF sensor bus |
@@ -30,29 +31,28 @@
 | **PB14** | GPIO OUT — XSHUT3 | VL53L0X Right XSHUT | 3.3V | Address remap control |
 | **PC0** | GPIO OUT — LED | TCS34725 LED pin | 3.3V | Controls built-in illuminator |
 | **PC1** | ADC1 IN11 | Battery voltage divider | 3.3V | Low-battery detection |
-| **PA0 (Boot0)** | Start Button | Tactile switch to GND | 3.3V | Single start button (pull-up) |
+| **PC13** | Start Button | Tactile switch to GND | 3.3V | Active LOW (built-in pull-up) |
 | **GND** | Ground | All sensor and peripheral GND | 0V | Star ground topology |
 | **3V3** | Power Out | STM32 → Sensors (LDO) | 3.3V | MPU, ToF, TCS34725, Line Array |
 
-> [!WARNING]
-> PA0 is used **both** as Line Sensor S1 input and Boot0. Use a jumper or switch to disconnect Boot0 during competition operation. Alternatively, configure UART bootloader permanently disabled in STM32 option bytes so PA0 is free for GPIO.
+> [!IMPORTANT]
+> IR sensors use **ADC1 + DMA1** (analogue), NOT digital GPIO. CubeMX: ADC1 IN0-IN7 on PA0-PA7, IN8 on PB0. DMA1 Stream0 CH0 circular, 144 word buffer (9 sensors × 16 oversamples).
 
----
+### 9-Channel TCRT5000 Line Array Connections
 
-### 8-Channel TCRT5000 Line Array Connections
-
-| Line Array Module Pin | Connected To | Notes |
-|-----------------------|-------------|-------|
-| **VCC** | STM32 3.3V | Check module VCC rating (some need 5V — use level shifter) |
-| **GND** | Common GND | |
-| **S1 OUT** | STM32 PA0 | Leftmost; configure pull-down |
-| **S2 OUT** | STM32 PA1 | |
-| **S3 OUT** | STM32 PA2 | |
-| **S4 OUT** | STM32 PA3 | |
-| **S5 OUT** | STM32 PA4 | |
-| **S6 OUT** | STM32 PA5 | |
-| **S7 OUT** | STM32 PA6 | |
-| **S8 OUT** | STM32 PA7 | Rightmost; configure pull-down |
+| Line Array Pin | Connected To | Mode | Notes |
+|----------------|-------------|------|-------|
+| **VCC** | STM32 3.3V | — | |
+| **GND** | Common GND | — | |
+| **S1 OUT** | STM32 PA0 | ADC1_IN0 | 10kΩ pull-up to 3.3V |
+| **S2 OUT** | STM32 PA1 | ADC1_IN1 | |
+| **S3 OUT** | STM32 PA2 | ADC1_IN2 | |
+| **S4 OUT** | STM32 PA3 | ADC1_IN3 | |
+| **S5 OUT** | STM32 PA4 | ADC1_IN4 | Centre sensor (error=0 when S5 active) |
+| **S6 OUT** | STM32 PA5 | ADC1_IN5 | |
+| **S7 OUT** | STM32 PA6 | ADC1_IN6 | |
+| **S8 OUT** | STM32 PA7 | ADC1_IN7 | |
+| **S9 OUT** | STM32 PB0 | ADC1_IN8 | Rightmost sensor |
 
 ---
 
@@ -83,7 +83,7 @@
 | **PWM 3–5** | Leg FR | Front Right (Coxa, Femur, Tibia) | |
 | **PWM 6–8** | Leg BL | Back Left (Coxa, Femur, Tibia) | |
 | **PWM 9–11** | Leg BR | Back Right (Coxa, Femur, Tibia) | |
-| **PWM 12** | Arm Pitch | Ball arm elevation servo | MODE A (0°) / MODE B (−70°) / Home |
+| **PWM 12** | Arm Pitch | Ball arm elevation servo | HOME=90° | MODE_A=0° | MODE_B=160° |
 | **PWM 13** | Gripper | Claw open/close | |
 | **PWM 14** | Storage Gate | Ball compartment gate | |
 | **PWM 15** | *Spare* | Available | |

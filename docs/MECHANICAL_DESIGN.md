@@ -25,18 +25,20 @@ The RUNNER-4 quadruped mechanical chassis is optimised for a low centre of gravi
   1. **Coxa (Shoulder Yaw ±45°)**: Sweeps the leg forward/backward and laterally.
   2. **Femur (Shoulder Pitch ±60°)**: Lifts the leg.
   3. **Tibia (Knee Pitch 0°–135°)**: Extends the leg downward.
-- **Link Lengths**: L_coxa = 25mm, L_femur = 50mm, L_tibia = 55mm (proposed; validate on prototype).
-- **Symmetry**: All servos mechanically zeroed (90°) before attaching horns.
+- **Link Lengths**: **L1 (Coxa)=30mm, L2 (Femur)=60mm, L3 (Tibia)=80mm** (confirmed hardware dimensions).
+- **Max reach from coxa pivot**: 60+80 = **140mm** | Min reach: |60-80| = **20mm**
+- **Symmetry**: All servos mechanically zeroed (90°) before attaching horns (see calibration guide).
 - **Foot**: Small rounded tip with rubber O-ring for traction on matte arena surface.
 
 ## 4. SubTask 01: Ball Arm + Gripper (with TCS34725)
 - **Design**: 2-DOF frontal arm (arm pitch + claw open/close).
 - **Mechanism**:
   - **Arm Pitch Servo (CH12)**: Rotates the arm to three calibrated positions:
-    - `HOME` (~90°): Resting/travel position — arm retracted.
-    - `MODE A` (~0° horizontal): Ball colour reading and grasp position — arm lowers to pedestal height.
-    - `MODE B` (~−70° downward): Floor zone colour reading — arm points at floor below front of robot.
-  - **Gripper Servo (CH13)**: Opens and closes claw around 40mm ball.
+    - `HOME` (90°): Resting/travel position — arm vertical, safe for walking.
+    - `MODE_A` (0° horizontal): Ball colour reading and grasp position — arm forward at pedestal height.
+    - `MODE_B` (160° downward): Floor zone colour reading — arm angles to floor below front of robot.
+  - **Gripper Servo (CH13)**: Opens (60°) and closes (115°) claw around 40mm ball.
+  - **Gate Servo (CH14)**: Locks ball in internal compartment (0°); opens for gravity release (90°).
 - **TCS34725 Colour Sensor Mounting**:
   - Sensor mounted rigidly at the arm tip.
   - A small 3D-printed shroud around the sensor blocks ambient arena light, ensuring the built-in LED is the primary light source for consistent readings.
@@ -44,12 +46,13 @@ The RUNNER-4 quadruped mechanical chassis is optimised for a low centre of gravi
   - When arm is in MODE B, sensor is ~1–3cm from floor line — within TCS34725 optimal range.
 - **Why arm-tip mounting**: The arm's range of motion allows the single sensor to serve both the ball-reading task (elevated pedestal) and the floor-reading task (ground level), eliminating the need for a second sensor.
 
-## 5. Line Array Bracket (NEW)
-- **Sensor**: 8-channel TCRT5000 IR array.
+## 5. Line Array Bracket
+- **Sensor**: 9-channel TCRT5000 IR array (analogue, ADC1 DMA).
 - **Mount Position**: Front-underside of main body chassis, centred on robot midline, perpendicular to forward axis.
-- **Mount Height**: 5–8mm above floor surface (adjust via slot in bracket; verify after leg length final assembly).
-- **Bracket Design**: Simple 3D-printed L-bracket or integrated into body baseplate. Protect sensors from side impacts.
-- **Wiring**: 8 signal wires routed inside chassis to STM32 GPIO PA0–PA7. Keep wire run <15cm to avoid noise.
+- **Mount Height**: 5mm above floor surface (TCRT5000 optimal at 5mm).
+- **Array Width**: 80mm total, 10mm pitch, S1-S9 left to right (PA0-PA7, PB0).
+- **Wiring**: S1-S8 signal wires to STM32 ADC1 PA0-PA7; S9 to PB0. 10kΩ pull-up to 3.3V per channel.
+- **DMA Buffer**: ADC1 + DMA1 circular, 9×16 = 144 words. 16× oversampling per sensor.
 
 ## 6. SubTask 03: Obstacle Pushing Bumper
 - **Design**: A flat, ~80–100mm wide, 50mm tall rigid bumper plate attached to the lower front chassis.
@@ -59,6 +62,8 @@ The RUNNER-4 quadruped mechanical chassis is optimised for a low centre of gravi
 
 ## 7. Centre of Mass Analysis
 - Battery (bottom-centre) ensures lowest possible CoG.
-- Removing Pi 4B (46g, top-mounted) lowers CoG further compared to original design.
+- 3-DOF legs with L1=30 L2=60 L3=80mm: foot reaches up to 140mm from coxa pivot.
+- At neutral stance (all feet at z=-50mm), body is 50mm above floor.
 - TCS34725 at arm tip (~5g) has negligible CoM impact.
-- When ball (~30g) is stored in front compartment: CoM shifts forward ~+2mm — within support polygon margin.
+- When ball (~30g) is stored in front belly compartment: CoM shifts forward ~+2mm — within trot support polygon.
+- During trot (2-leg stance FL+BR or FR+BL), support triangle is ~160mm × 120mm — CoG stays inside at Vx up to ~100mm/s.

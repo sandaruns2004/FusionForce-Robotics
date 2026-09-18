@@ -10,25 +10,29 @@ The hardware architecture of the RUNNER-4 quadruped robot is designed around a *
 
 | Sensor | Interface | Address/Pins | Purpose |
 |--------|-----------|-------------|---------|
-| **8-Channel TCRT5000 IR Line Array** | GPIO Digital | PA0–PA7 (8 pins) | Line following, intersection detection, junction identification |
-| **TCS34725 RGBC Colour Sensor** | I2C1 | 0x29 | Ball colour ID (arm 0°) + Floor zone colour ID (arm −70°) |
-| **MPU6050 IMU** | I2C1 | 0x68 | 6-axis gyro/accelerometer for postural stability and pitch/roll |
-| **VL53L0X ToF (Front)** | I2C2 | 0x30 (remap) | Obstacle/ball pedestal proximity detection |
-| **VL53L0X ToF (Left)** | I2C2 | 0x31 (remap) | Left wall distance for corridor centering |
-| **VL53L0X ToF (Right)** | I2C2 | 0x32 (remap) | Right wall distance for corridor centering |
+| **9-Channel TCRT5000 IR Line Array** | ADC1 + DMA1 | PA0–PA7, PB0 (9 pins) | Line following, weighted centroid, junction detection (≥6/9 active) |
+| **TCS34725 RGBC Colour Sensor** | I2C1 | 0x29 | Ball colour ID (arm MODE_A 0°) + Floor zone colour ID (arm MODE_B 160°) |
+| **MPU6050 IMU** | I2C1 | 0x68 | 6-axis gyro/accel, complementary filter, 100Hz tilt safety monitor |
+| **VL53L0X ToF (Front)** | I2C2 | 0x30 (remap) | Ball pedestal approach (<80mm) + obstacle detect (<150mm) |
+| **VL53L0X ToF (Left)** | I2C2 | 0x31 (remap) | Left wall distance for corridor wall-follow PD |
+| **VL53L0X ToF (Right)** | I2C2 | 0x32 (remap) | Right wall distance for corridor wall-follow PD |
 
 ### Line Array Details
-- Type: 8× TCRT5000 reflective IR, digital output
-- Array width: ~70mm; sensor spacing: ~8.75mm
-- Mount position: Front-underside of body, 5–8mm above floor, centred on robot midline
-- Logic: HIGH = white/reflective surface detected; LOW = black surface
+- Type: 9× TCRT5000 reflective IR, **analogue output → ADC1 + DMA1** (circular, 16× oversampling)
+- Array width: 80mm total; sensor pitch: 10mm centre-to-centre
+- Mount position: Front-underside of body, 5mm above floor, centred on robot midline
+- Interface: S1–S8 on PA0–PA7 (ADC1 IN0-IN7), S9 on PB0 (ADC1 IN8)
+- Pull-up: 10kΩ to 3.3V per sensor
+- DMA buffer: 9 × 16 = 144 uint32 words (circular)
+- Centroid formula: `error = centroid - 4.0` (range −4 to +4, 0 = centred)
 
 ### Colour Sensor Details
 - Type: TCS34725 RGBC, I2C, 0x29 on I2C1
 - Mount position: Gripper arm tip
-- **Mode A** (arm at 0° horizontal): Reads ball colour at 1–2cm range when arm lowers to pedestal height
-- **Mode B** (arm at −70° downward): Reads floor colour zone at 1–3cm range at 3-way junction
-- Built-in white LED illuminator controlled via STM32 PC0 for consistent lighting
+- **MODE_A** (CH12 at 0°, arm horizontal forward): Reads ball colour at 1–2cm range at pedestal height
+- **MODE_B** (CH12 at 160°, arm angled down to floor): Reads floor colour zone at 1–3cm range at junction
+- Built-in white LED illuminator controlled via STM32 **PC0** (HIGH = LED ON during reads)
+- Non-blocking polling: read available every ~120ms (3×20ms start + 3×20ms wait)
 
 ## 4. Actuation Layer
 - **Servo Driver**: PCA9685 16-channel 12-bit PWM controller on I2C1 (0x40).
@@ -38,11 +42,11 @@ The hardware architecture of the RUNNER-4 quadruped robot is designed around a *
 - **Storage Gate Servo**: 1× MG90S. CH14. Locks ball in internal compartment; releases by gravity.
 
 ## 5. Mechanical Integration
-- **Chassis**: Custom 3D-printed PETG body. 3-tier deck: battery (bottom), STM32+PCA9685 (mid), sensor headers (top).
-- **Leg Design**: 3-DOF per leg (Coxa yaw ±45°, Femur pitch ±60°, Tibia pitch 0°–135°).
-- **Front Bumper**: Flat, rigid PETG plate (50%+ infill) at front-bottom, ground to 50mm height.
-- **Line Array Bracket**: 3D-printed mount holds TCRT5000 array at 5–8mm above floor.
-- **Arm Tip Mount**: Small 3D-printed shroud holds TCS34725 at gripper arm tip, with partial light shield.
+- **Chassis**: Custom 3D-printed PETG body. 3-tier deck: battery (bottom), STM32+PCA9685 (mid), sensor bar (top/front).
+- **Leg Design**: 3-DOF per leg. **L1 (Coxa)=30mm**, **L2 (Femur)=60mm**, **L3 (Tibia)=80mm**. Max reach 140mm.
+- **Gait**: Trot (diagonal FL+BR / FR+BL). Period 600ms, step height 35mm, Vx_max 100mm/s.
+- **Line Array Bracket**: 9-sensor TCRT5000 bar, 80mm wide, 5mm above floor, held on front-underside bracket.
+- **Arm Tip Mount**: Small 3D-printed shroud holds TCS34725 at gripper arm tip (CH12 pitch servo).
 
 ## 6. Block Diagram
 
@@ -53,9 +57,9 @@ flowchart TD
     end
 
     subgraph Sensors
-        LINE["8× TCRT5000\nLine Array"]
+        LINE["9× TCRT5000\nLine Array (ADC DMA)"]
         CLR["TCS34725\nColour Sensor"]
-        IMU["MPU6050\nIMU"]
+        IMU["MPU6050\nIMU 100Hz"]
         TOF["3× VL53L0X\nToF Sensors"]
     end
 
@@ -65,10 +69,10 @@ flowchart TD
         MECH["3× MG90S\nArm · Gripper · Gate"]
     end
 
-    LINE -->|"GPIO PA0–PA7"| STM
+    LINE -->|"ADC1 DMA PA0-PA7 PB0"| STM
     CLR  <-->|"I2C1 0x29"| STM
     IMU  <-->|"I2C1 0x68"| STM
-    TOF  <-->|"I2C2 XSHUT"| STM
+    TOF  <-->|"I2C2 XSHUT PB12-14"| STM
 
     STM  <-->|"I2C1 0x40"| PCA
     PCA  ===|"PWM CH0–CH11"| LEG
