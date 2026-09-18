@@ -3,15 +3,12 @@
 ### FusionForce Robotics — EN2533 BREACH PROTOCOL
 
 > [!IMPORTANT]
-> **MCU: STM32F411CEU6 (Black Pill)** — 100 MHz Cortex-M4F, 512 KB Flash, 128 KB RAM.
-> This is a **planned migration**. The current production hardware uses the
-> 8-channel **digital** TCRT5000 driver ([`line_array.c`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array.c) /
-> [`line_array.h`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array.h)).
-> The 9-channel analog driver ([`line_array_9ch.h`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array_9ch.h) /
-> [`line_array_9ch.c`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array_9ch.c)) exists but
-> **`state_machine.h` still includes `line_array.h`** — full integration is pending.
-> Migration gives sub-pixel centroid resolution, per-sensor noise filtering,
-> and automatic calibration — critical for curved corridor and colour-sort tasks.
+> This report supersedes the existing 8-channel digital TCRT5000 STM32 driver
+> ([`line_array.c`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array.c) / [`line_array.h`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Drivers/LineArray/line_array.h)).
+> We are migrating to a **9-channel analog array on the STM32**, which gives us
+> sub-pixel centroid resolution, per-sensor noise filtering, and automatic
+> white-balance calibration — critical improvements for the curved corridor and
+> colour-sort junction tasks.
 
 ---
 
@@ -100,26 +97,21 @@ S1   S2   S3   S4  [S5]  S6   S7   S8   S9
 ```
 
 ### Why Analog on STM32?
-The **STM32F411CEU6** has a 12-bit SAR ADC with 16 multiplexed channels, supporting scan mode + DMA. Our 9 sensors fit on ADC1 channels IN0–IN8 (PA0–PA7 + PB0) **without any external multiplexer**.
-
-> [!NOTE]
-> **Current hardware**: PA0–PA7 are configured as digital GPIO inputs (pull-down) for the 8-channel
-> TCRT5000 array. Migration to analog requires reconfiguring these pins in STM32CubeMX from
-> `GPIO_Input` to `ADC1_IN0`–`ADC1_IN8`, and adding PB0 as `ADC1_IN8` for S9.
+The STM32F401 has a 12-bit SAR ADC with 16 multiplexed channels, supporting scan mode + DMA. Our 9 sensors fit on ADC1 channels IN0–IN8 (PA0–PA7 + PB0) **without any external multiplexer**.
 
 12-bit resolution gives 4096 levels per sensor → sub-millimetre line position accuracy → smoother PD control → less oscillation in curved corridors.
 
 ### Why Stay on STM32 Instead of Using an ESP32 Co-Processor?
 | Criterion | Two-MCU (STM32 + ESP32) | Single STM32 (Ours) |
 |-----------|------------------------|---------------------|
-| ADC channels available | 18 (ESP32) | 16 (STM32F411) — sufficient |
+| ADC channels available | 18 (ESP32) | 16 (STM32F401) — sufficient |
 | UART latency | +1 ms protocol overhead | Zero — direct register access |
 | Synchronisation | Requires UART framing + CRC | Deterministic — same clock domain |
 | Code complexity | Two firmware projects | Single codebase |
 | Power consumption | +80 mA (ESP32 active) | ~5 mA ADC overhead only |
 | Failure modes | UART drop, ESP32 crash | Fewer; simpler debugging |
 
-The STM32F411CEU6 has **enough ADC channels and processing headroom** to handle 9 analog sensors natively via DMA, eliminating the co-processor approach entirely.
+The STM32F401 has **enough ADC channels and processing headroom** to handle 9 analog sensors natively via DMA, eliminating the co-processor approach entirely.
 
 ---
 
@@ -209,7 +201,7 @@ Front of Robot (direction of travel)
 ### Dimensional Specifications
 
 | Parameter | Value | Rationale |
-|-----------|-------|-----------| 
+|-----------|-------|-----------|
 | Sensor spacing | 10 mm | Arena line = 30 mm wide → ~3 sensors on line |
 | Array width | 80 mm (9 × 10 mm − 10 mm ends) | Fits within robot footprint |
 | Mounting height | 10–15 mm above ground | TCRT5000 optimal range: 2–15 mm |
@@ -373,14 +365,7 @@ line_val[i] = 1.0f - normalised[i];
 ```
 
 ### Calibration Storage — STM32 Internal Flash
-```c
-/* Calibration Flash storage */
-/* ⚠️ WARNING: On STM32F411, 0x0807F800 (Sector 7) is ALSO used by state_machine.c
- *  for ball colour persistence (BALL_COLOR_FLASH_ADDR). Choose a different sector
- *  (e.g. Sector 6 @ 0x08060000) or use sub-page offsets to avoid collision.      */
-#define LA_CAL_FLASH_ADDR           0x0807F800UL  ///< Sector 7 — SHARED with ball colour!
-#define LA_CAL_FLASH_SECTOR         FLASH_SECTOR_7
-```
+Calibration is stored in the **last page of User Flash** (`LA_CAL_FLASH_ADDR = 0x0807F800`):
 - Survives power cycles indefinitely (Flash endurance: 10,000 write cycles)
 - Uses a **magic word** (`0xCAFEBEEF`) to detect uninitialized/corrupted data
 - Structure: `LA_Calibration_t` (magic + 9× min + 9× max + valid flag)
@@ -989,35 +974,11 @@ void app_start(void) {
 
 ## 12. Integration with State Machine
 
-### Current vs. Target `SM_SensorData_t`
+### Updating `SM_SensorData_t`
+Update the existing [`SM_SensorData_t`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Navigation) in `state_machine.h`:
 
-> [!WARNING]
-> The **current** [`state_machine.h`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Navigation/state_machine.h)
-> uses the OLD 8-channel struct and still includes `#include "line_array.h"`. The migration
-> requires updating both the include and the struct. Below is the target state after migration.
-
-**Current struct (DO NOT break this — migrate carefully):**
 ```c
-/* Current SM_SensorData_t in state_machine.h */
-typedef struct {
-    uint8_t   line_bits;        // 8-bit GPIO bitmask (old driver)
-    float     line_centroid;    // error range −3.5 to +3.5 (old, 8-sensor)
-    bool      intersection;
-    uint16_t  tof_front_mm;
-    uint16_t  tof_left_mm;
-    uint16_t  tof_right_mm;
-    ColorID_t last_color;
-    float     pitch_deg;
-    float     roll_deg;
-    uint16_t  batt_mv;
-} SM_SensorData_t;
-```
-
-**Target struct after 9-ch migration:**
-```c
-/* In state_machine.h — update after migration to line_array_9ch: */
-#include "line_array_9ch.h"   // Replace: #include "line_array.h"
-
+/* In state_machine.h — update the sensor data struct: */
 typedef struct {
     /* Line array (9-channel analog — replaces 8-channel digital) */
     float    line_error;        ///< Centroid error −4.0 to +4.0 (NAN if lost)
@@ -1026,42 +987,28 @@ typedef struct {
     bool     intersection;      ///< Junction/intersection confirmed
     bool     line_lost;         ///< True when no sensor sees line
     uint32_t line_lost_ms;      ///< Duration line has been lost (ms)
-    /* ToF / Colour / IMU fields below unchanged */
-    uint16_t  tof_front_mm;
-    uint16_t  tof_left_mm;
-    uint16_t  tof_right_mm;
-    ColorID_t last_color;
-    float     pitch_deg;
-    float     roll_deg;
-    uint16_t  batt_mv;
+
+    /* ... rest of existing fields unchanged ... */
 } SM_SensorData_t;
 ```
 
-### State Machine Sensor Update
-
-> [!NOTE]
-> The **current** state machine runs at **50 Hz (20 ms period)** via TIM2 interrupt,
-> not 100 Hz. `LA_Update()` should be called at 100 Hz from a FreeRTOS task,
-> with the result published to a shared struct consumed at 50 Hz by the SM.
-> The SM update function signature is `StateMachine_Update(const SM_SensorData_t *s)` — not `StateMachine_Tick`.
+### State Machine Sensor Update (Call at 100 Hz)
 
 ```c
-/* In 50 Hz main loop (20 ms TIM2 ISR drives update_flag): */
-void StateMachine_Tick_50Hz(void) {
-    /* Get latest line array result (produced at 100 Hz by sensor task) */
-    LA_Result_t la = SENSOR_GetResult();   /* Thread-safe mutex getter */
+/* In your 100 Hz state machine tick function: */
+void StateMachine_Tick(void) {
+    LA_Result_t la = SENSOR_GetResult();   /* Thread-safe getter */
 
-    /* Map to SM_SensorData_t */
-    SM_SensorData_t s;
-    s.line_error      = la.error;                 /* −4.0 to +4.0, NAN if lost */
-    s.line_error_mm   = la.error_mm;              /* mm from centre */
-    s.line_active_cnt = (uint8_t)la.active_count; /* 0–9 */
-    s.intersection    = la.is_junction;
-    s.line_lost       = la.is_line_lost;
-    s.line_lost_ms    = la.lost_duration_ms;
-    /* Populate remaining fields (ToF, colour, IMU) elsewhere */
+    /* Update SM sensor data */
+    g_sm_data.line_error      = la.error;
+    g_sm_data.line_error_mm   = la.error_mm;
+    g_sm_data.line_active_cnt = (uint8_t)la.active_count;
+    g_sm_data.intersection    = la.is_junction;
+    g_sm_data.line_lost       = la.is_line_lost;
+    g_sm_data.line_lost_ms    = la.lost_duration_ms;
 
-    StateMachine_Update(&s);   /* 50 Hz state machine step */
+    /* Run state machine logic */
+    StateMachine_Run(&g_sm_data);
 }
 ```
 
@@ -1135,11 +1082,6 @@ Gait_SetTwist(FORWARD_SPEED_MMS, 0.0f, omega);
 
 ### PD Controller Tuning (Step-by-Step)
 
-> [!NOTE]
-> The current 8-ch driver uses `Kp = 0.80`, `Kd = 0.05`, `Wz_max = 0.80` at 50 Hz
-> (see [`line_follower.h`](file:///c:/Users/ADMIN/Desktop/FusionForce-Robotics/firmware/Navigation/line_follower.h)).
-> With 9-ch analog and 100 Hz rate, these need retuning — start from the defaults below.
-
 **Step 1: Set Kd = 0, increase Kp**
 - Start: `Kp = 0.2`, `Kd = 0.0`
 - Increase Kp until robot oscillates on a straight line
@@ -1178,11 +1120,6 @@ Gait_SetTwist(FORWARD_SPEED_MMS, 0.0f, omega);
 
 ### Complete Pin Table
 
-> [!WARNING]
-> **Current pin state**: PA0–PA7 are `GPIO_Input` (pull-down) for the 8-ch digital driver.
-> PB0 is currently unassigned. **Reconfigure all to ADC1** in STM32CubeMX before using this driver.
-> The PINOUT_AND_CONNECTIONS.md authoritative document must be updated to reflect this change.
-
 | Sensor | Signal | STM32 GPIO | ADC Unit | ADC Channel | Pull-up R2 |
 |--------|--------|-----------|---------|-------------|-----------|
 | S1 (Left) | Analog OUT | PA0 | ADC1 | IN0 | 10 kΩ to 3.3 V |
@@ -1196,11 +1133,7 @@ Gait_SetTwist(FORWARD_SPEED_MMS, 0.0f, omega);
 | S9 (Right) | Analog OUT | PB0 | ADC1 | IN8 | 10 kΩ to 3.3 V |
 | All sensors | VCC | — | — | — | 3.3 V |
 | All sensors | GND | — | — | — | GND |
-| Debug TX | USART1 TX | **PA9** | — | — | — |
-
-> [!NOTE]
-> Debug UART is **USART1 on PA9/PA10** (not USART2/PA2) per `STM32_ARCHITECTURE.md`.
-> Disconnect at competition. PA2 conflict does NOT apply — PA2 is free for S3 ADC use.
+| Debug TX | UART2 TX | PA2 | — | — | — |
 
 > [!NOTE]
 > PA2 is used by USART2_TX on Nucleo boards. If using PA2 as UART, remap
@@ -1261,29 +1194,11 @@ the `sensor_idx` ordering in the driver:
 │ Line lost: all sensors <15% contribution → lost_duration_ms counted  │
 ├──────────────────────────────────────────────────────────────────────┤
 │ PD gains: Kp=0.6, Kd=0.08, Wz_max=1.2 rad/s (starting point)        │
-│ Current 8-ch gains: Kp=0.80, Kd=0.05, Wz_max=0.80 @ 50Hz            │
-│ All onboard STM32F411CEU6 — no co-processor needed                   │
+│ No UART co-processor needed — all onboard STM32F401                  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
----
-
-## Migration Checklist (8-ch Digital → 9-ch Analog)
-
-- [ ] Reconfigure PA0–PA7 from `GPIO_Input` to `ADC1_IN0–IN7` in STM32CubeMX
-- [ ] Add PB0 as `ADC1_IN8` for S9 in STM32CubeMX
-- [ ] Enable ADC1 Scan+Continuous+DMA Circular mode, 9 ranks, 480-cycle sample time
-- [ ] Configure DMA1 Stream0 Ch0, Peripheral→Memory, Circular, Word
-- [ ] Replace `#include "line_array.h"` with `#include "line_array_9ch.h"` in `state_machine.h`
-- [ ] Update `SM_SensorData_t` struct (remove `line_bits`, add `line_error`, `line_active_cnt` etc.)
-- [ ] Resolve Flash sector conflict: move line cal to Sector 6 (0x08060000) and ball colour stays at Sector 7 (0x0807F800)
-- [ ] Update `PINOUT_AND_CONNECTIONS.md` to reflect ADC pins
-- [ ] Retune PD gains from Kp=0.80/Kd=0.05 (50Hz, 8-ch) to Kp=0.60/Kd=0.08 (100Hz, 9-ch)
-- [ ] Run full 4-phase testing procedure
-
----
-
 *Report generated: September 2026 | FusionForce Robotics | RUNNER-4 Project*
-*MCU: STM32F411CEU6 | Migration report: 8-ch digital → 9-ch analog IR sensor array*
+*STM32 adaptation of the 9-Channel Analog IR Sensor Array Technical Report*
