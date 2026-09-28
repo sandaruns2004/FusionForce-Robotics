@@ -11,17 +11,17 @@ The system is divided into two domains. This division dictates hardware placemen
 
 ### Domain 1: STM32 + Embedded Sensing (The "Brain + Spine")
 This single layer handles all cognitive functions AND all real-time control. It knows where to go and exactly how to move the legs to get there.
-- **Hardware**: STM32F411CEU6 (Black Pill), 8-Channel TCRT5000 IR Line Array, TCS34725 RGBC Colour Sensor, MPU6050 IMU, 3× VL53L0X ToF Sensors.
+- **Hardware**: STM32F411CEU6 (Black Pill), 9-Channel TCRT5000 IR Line Array (ADC DMA), TCS34725 RGBC Colour Sensor, MPU6050 IMU, 3× VL53L0X ToF Sensors.
 - **Software**: Bare-metal C using STM32 HAL. 50Hz deterministic control loop.
 - **Responsibilities**:
-  - Reading 8-channel IR line array for line following and intersection detection.
-  - Reading TCS34725 colour sensor for ball colour identification (Task 01) and floor zone detection (Task 04).
+  - Reading 9-channel IR line array via ADC1+DMA (analogue, 16× oversampled) for line following and junction detection.
+  - Reading TCS34725 colour sensor for ball colour identification (Task 01, arm MODE_A 0°) and floor zone detection (Task 04, arm MODE_B 160°).
   - Running the Mission Hierarchical Finite State Machine (HFSM) — all 4 subtasks.
-  - Inverse Kinematics (IK) math to determine joint angles.
-  - Generating crawl gaits via Bezier trajectories.
-  - Sending PWM target angles to the PCA9685 via I2C at 50Hz.
-  - Reading IMU and running postural stabilization PID loop.
-  - Reading ToF sensors for wall-distance feedback.
+  - Inverse Kinematics (IK) math: L1=30mm, L2=60mm, L3=80mm geometric solver.
+  - Generating **trot gait** (diagonal FL+BR / FR+BL pairs, T=600ms, step height=35mm).
+  - Sending PWM target angles to the PCA9685 via I2C1 at 50Hz.
+  - Reading MPU6050 IMU at 100Hz (TIM3 ISR) as safety tilt watchdog only.
+  - Reading ToF sensors for wall-distance feedback and obstacle detection.
   - Persisting `stored_ball_color` in Flash across power cycles/restarts.
 
 ### Domain 2: Mechanical & Locomotion (The "Body")
@@ -39,22 +39,22 @@ This layer translates the mathematical outputs of Domain 1 into physical motion.
          │             DOMAIN 1: BRAIN + SPINE                  │
          │                                                      │
          │  ┌─ PERCEPTION ──────────────────────────────────┐   │
-         │  │ 8× TCRT5000 IR Line Array (GPIO PA0–PA7)      │   │
-         │  │  → Line centroid, Intersection/Junction detect │   │
-         │  │ TCS34725 Colour Sensor (I2C1, 0x29, arm tip)  │   │
-         │  │  → Ball colour ID (arm 0°) + Floor zone (−70°)│   │
-         │  │ MPU6050 IMU (I2C1, 0x68)                      │   │
-         │  │  → Pitch/roll for body stabilisation          │   │
-         │  │ 3× VL53L0X ToF (I2C2, XSHUT-addressed)       │   │
-         │  │  → Wall distances, obstacle detection         │   │
-         │  └───────────────────────────────────────────────┘   │
+         │  │  9× TCRT5000 IR Array (ADC1+DMA PA0-PA7,PB0) │   │
+         │  │   → Line centroid ±4.0, Junction detect (≥6/9) │   │
+         │  │ TCS34725 Colour Sensor (I2C1, 0x29, arm tip)   │   │
+         │  │   → Ball colour (MODE_A 0°) + Floor zone (MODE_B 160°)│
+         │  │ MPU6050 IMU (I2C1, 0x68)                       │   │
+         │  │   → Pitch/roll at 100Hz, tilt safety watchdog   │   │
+         │  │ 3× VL53L0X ToF (I2C2, XSHUT-addressed)        │   │
+         │  │   → Wall distances (PD ctrl) + obstacle detect   │   │
+         │  └───────────────────────────────────────────────────┘   │
          │                       │                              │
          │  ┌─ CONTROL ──────────▼──────────────────────────┐   │
          │  │ STM32F411CEU6 (100MHz, 512KB Flash, 128KB RAM) │   │
-         │  │  Mission State Machine (18 states, all tasks)  │   │
-         │  │  Gait Generator (crawl, Bezier trajectories)   │   │
+         │  │  Mission State Machine (21 states, all tasks)  │   │
+         │  │  Trot Gait Engine (L1=30 L2=60 L3=80mm, 600ms) │  │
          │  │  Inverse Kinematics (3-DOF per leg, 4 legs)    │   │
-         │  │  Postural PID (IMU feedback → foot corrections) │   │
+         │  │  PD Line + Wall Controllers → Wz commands       │   │
          │  └────────────────────┬──────────────────────────┘   │
          └───────────────────────┼──────────────────────────────┘
                                  │

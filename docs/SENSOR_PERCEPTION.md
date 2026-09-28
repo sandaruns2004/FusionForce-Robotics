@@ -6,13 +6,14 @@
 ## 1. 8-Channel TCRT5000 IR Line Array
 
 ### 1.1 Hardware
-- **Sensor Type**: 8× TCRT5000 reflective infrared sensor (digital output)
-- **Array Width**: ~70mm total; sensors spaced ~8.75mm centre-to-centre
-- **Output**: Digital HIGH (1) = white/reflective surface detected; LOW (0) = black/absorptive surface
-- **Power**: 3.3V or 5V (check module VCC rating); connect to STM32 3.3V rail
+- **Sensor Type**: 9× TCRT5000 reflective infrared sensor (**analogue output → ADC1 + DMA1**)
+- **Array Width**: 80mm total; sensors spaced **10mm** centre-to-centre
+- **Output**: Analogue voltage (high = white/reflective, low = black/absorptive); ADC reads 0–4095
+- **Power**: 3.3V; 10kΩ pull-up per sensor to 3.3V
 - **Mount Position**: Front-underside of robot body, centred on midline
-- **Mount Height**: 5–8mm above floor surface (closer = more sensitive; too close = physical contact risk)
-- **Interface**: 8 GPIO input pins on STM32 (PA0–PA7), configured as INPUT with internal pull-down
+- **Mount Height**: 5mm above floor surface (optimal TCRT5000 sensing distance)
+- **Interface**: S1–S8 on ADC1_IN0–IN7 (PA0–PA7), S9 on ADC1_IN8 (PB0)
+- **DMA**: ADC1 + DMA1 Stream0 CH0, circular mode, 9×16=144 words (16× oversampling)
 
 ### 1.2 Line Following Algorithm — Weighted Centroid
 Given the 8-bit reading bitmask (S1=bit0 ... S8=bit7):
@@ -22,17 +23,18 @@ Given the 8-bit reading bitmask (S1=bit0 ... S8=bit7):
 // val[i]: 1 if sensor active (white), 0 if not (black)
 
 float sum_w = 0, sum_v = 0;
-for (int i = 0; i < 8; i++) {
-    sum_w += (float)val[i];
-    sum_v += (float)(i * val[i]);
+for (int i = 0; i < 9; i++) {
+    sum_w += line_val[i];
+    sum_v += (float)i * line_val[i];
 }
 
-if (sum_w == 0) return NAN;  // All black — line lost
+if (sum_w < 0.01f) return NAN;  // All sensors below threshold — line lost
 
-float centroid = sum_v / sum_w;      // Range 0.0 to 7.0
-float error    = centroid - 3.5f;    // Range –3.5 to +3.5
+float centroid = sum_v / sum_w;      // Range 0.0 to 8.0
+float error    = centroid - 4.0f;    // Range –4.0 to +4.0
                                      // Negative = line is LEFT of centre
                                      // Positive = line is RIGHT of centre
+                                     // error_mm = error * 10.0mm
 ```
 
 This `error` value is fed to the PD line-follower controller to generate `Wz` (angular velocity).
@@ -41,18 +43,18 @@ This `error` value is fed to the PD line-follower controller to generate `Wz` (a
 
 | Scenario | Typical Active Count | Pattern |
 |----------|---------------------|---------|
-| Straight line, centred | 3–4 sensors | Middle sensors active |
+| Straight line, centred | 3–5 sensors | Middle sensors active |
 | Curve or corner | 2–5 sensors | Offset cluster |
-| **T-junction or + cross** | **6–8 sensors** | **Wide activation** |
+| **T-junction or + cross** | **6–9 sensors** | **Wide activation** |
 | Ball pedestal base (small circle) | 1–2 sensors | Edge only (ToF confirms ball) |
-| Line lost | 0 sensors | All LOW |
+| Line lost | 0 sensors | All analogue values < threshold |
 
 **Intersection detection rule** (temporal filter prevents false triggers):
 ```c
 // Called every 20ms in main loop
 static uint8_t consecutive_count = 0;
 
-uint8_t active = __builtin_popcount(line_bitmask);  // count HIGH bits
+uint8_t active = la_result.active_count;  // number of sensors above LA_LINE_THRESH
 if (active >= 6) {
     consecutive_count++;
     if (consecutive_count >= 3) {
@@ -125,9 +127,9 @@ MODE B — Floor Zone Reading (Task 04):
 
 **Pre-calibrated PWM constants:**
 ```c
-#define ARM_ANGLE_HOME    90   // Degrees — resting/travel position
-#define ARM_ANGLE_BALL   -10   // Degrees — forward, near pedestal height
-#define ARM_ANGLE_FLOOR  -70   // Degrees — pointing at floor for zone read
+#define ARM_ANGLE_HOME    90    // Degrees — vertical, safe for walking
+#define ARM_ANGLE_BALL     0    // Degrees — horizontal forward, pedestal height (MODE_A)
+#define ARM_ANGLE_FLOOR  160    // Degrees — angled down to floor (MODE_B)
 ```
 
 ### 2.3 I2C Register Configuration
