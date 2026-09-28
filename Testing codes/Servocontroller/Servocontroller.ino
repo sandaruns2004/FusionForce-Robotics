@@ -1,41 +1,73 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
-// Initialize the PCA9685 driver on the default I2C address (0x40)
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-// Depending on your servo make, the minimum and maximum pulse length count may vary.
-// These are typical values for standard 180-degree servos (out of 4096)
-#define SERVOMIN  150 // This is the 'minimum' pulse length count (approx 0 degrees)
-#define SERVOMAX  600 // This is the 'maximum' pulse length count (approx 180 degrees)
-#define SERVO_NUM 0   // The channel your servo is plugged into
+#define SERVOMIN  150 // Pulse length for 0 degrees
+#define SERVOMAX  600 // Pulse length for 180 degrees
+
+#define SERVO_CH0 0   // Channel 0
+#define SERVO_CH2 2   // Channel 2
+
+// Variables to hold the pulse lengths for our specific angles
+int pulse180, pulse150, pulse100;
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("PCA9685 Servo Test");
-
+  
   pwm.begin();
-  // Standard servos operate at 50 Hz (updates 50 times per second)
   pwm.setPWMFreq(50);  
   delay(10);
+
+  // Automatically calculate the pulse lengths for 180, 150, and 100 degrees
+  pulse180 = map(180, 0, 180, SERVOMIN, SERVOMAX);
+  pulse150 = map(150, 0, 180, SERVOMIN, SERVOMAX);
+  pulse100 = map(100, 0, 180, SERVOMIN, SERVOMAX);
+
+  // --- STAGGERED STARTUP ---
+  Serial.println("Moving Ch 0 to 180...");
+  pwm.setPWM(SERVO_CH0, 0, pulse180);
+  delay(500); 
+
+  Serial.println("Moving Ch 2 to 100...");
+  pwm.setPWM(SERVO_CH2, 0, pulse100);
+  delay(1000); 
 }
 
 void loop() {
-  // Move from 0 degrees to 180 degrees
-  Serial.println("Moving to 180 degrees");
-  for (uint16_t pulselen = SERVOMIN; pulselen < SERVOMAX; pulselen++) {
-    pwm.setPWM(SERVO_NUM, 0, pulselen);
-    delay(5); // Adjust delay to change speed
-  }
-
-  delay(1000);
-
-  // Move from 180 degrees back to 0 degrees
-  Serial.println("Moving to 0 degrees");
-  for (uint16_t pulselen = SERVOMAX; pulselen > SERVOMIN; pulselen--) {
-    pwm.setPWM(SERVO_NUM, 0, pulselen);
+  // 1. Sweep Channel 0 from 180 DOWN to 150
+  Serial.println("Ch 0: 180 -> 150");
+  for (uint16_t p = pulse180; p >= pulse150; p--) {
+    pwm.setPWM(SERVO_CH0, 0, p);
     delay(5);
   }
+  delay(500); 
 
-  delay(1000);
+  // 2. Sweep Channel 2 from 100 UP to 150
+  Serial.println("Ch 2: 100 -> 150");
+  for (uint16_t p = pulse100; p <= pulse150; p++) {
+    pwm.setPWM(SERVO_CH2, 0, p);
+    delay(5);
+  }
+  delay(1000); 
+
+  // --- RETURN SWEEP ---
+  // We sweep them back to their starting positions slowly so they don't 
+  // violently snap back when the loop repeats.
+  
+  Serial.println("Resetting positions...");
+  
+  // Sweep Channel 0 back up to 180
+  for (uint16_t p = pulse150; p <= pulse180; p++) {
+    pwm.setPWM(SERVO_CH0, 0, p);
+    delay(5);
+  }
+  
+  // Sweep Channel 2 back down to 100
+  for (uint16_t p = pulse150; p >= pulse100; p--) {
+    pwm.setPWM(SERVO_CH2, 0, p);
+    delay(5);
+  }
+  
+  delay(1000); // Wait 1 second before starting the whole sequence over
 }
