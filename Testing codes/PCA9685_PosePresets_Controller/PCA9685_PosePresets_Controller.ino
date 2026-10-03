@@ -164,9 +164,9 @@ int poseAngles[13][4][3] = {
   // VARIANT 1 — BASIC: your hip/femur values, tibia kept at standing angles
   //
   // Pose 9: WALK A — BASIC (FL+BR lifted)
-  //   FL: Hip=55  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
-  //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=55  Fem=47  Tib=115(keep)
-  { {55, 35, 115}, {94, 135, 45}, {94, 111, 55}, {55, 47, 115} },
+  //   FL: Hip=60  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
+  //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=60  Fem=47  Tib=115(keep)
+  { {60, 35, 115}, {94, 135, 45}, {94, 111, 55}, {60, 47, 115} },
 
   // Pose 10: WALK B — BASIC (FR+BL lifted, FL+BR put down)
   //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=45(keep)
@@ -176,9 +176,9 @@ int poseAngles[13][4][3] = {
   // VARIANT 2 — ENHANCED: your hip/femur values + tibia retracted for ground clearance
   //
   // Pose 11: WALK A — ENHANCED (FL+BR lifted, tibia retracts)
-  //   FL: Hip=55  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
-  //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=55  Fem=47  Tib=130(retract)
-  { {55, 35, 130}, {94, 135, 45}, {94, 111, 55}, {55, 47, 130} },
+  //   FL: Hip=60  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
+  //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=60  Fem=47  Tib=130(retract)
+  { {60, 35, 130}, {94, 135, 45}, {94, 111, 55}, {60, 47, 130} },
 
   // Pose 12: WALK B — ENHANCED (FR+BL lifted, tibia retracts)
   //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=30(retract)
