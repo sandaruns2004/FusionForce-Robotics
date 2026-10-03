@@ -1,3 +1,17 @@
+// =============================================================================
+// PCA9685 Servo Controller - Arduino Uno 
+// =============================================================================
+//
+// ARDUINO UNO → PCA9685 WIRING:
+//   Arduino Uno 5V       ->  PCA9685 VCC
+//   Arduino Uno GND      ->  PCA9685 GND
+//   Arduino Uno A4 (SDA) ->  PCA9685 SDA
+//   Arduino Uno A5 (SCL) ->  PCA9685 SCL
+//
+// DO NOT power servos from the Uno's 5V pin! Connect an external 5V-6V 
+// power supply to the PCA9685 V+ and GND terminals.
+// =============================================================================
+
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
