@@ -131,7 +131,7 @@ const int legMirror[4] = {1, -1, 1, -1};
 //       your specific robot, then update values here and reflash.
 // ─────────────────────────────────────────────────────────────────────────────
 // Pose presets can be updated dynamically via the Web UI for calibration
-int poseAngles[9][4][3] = {
+int poseAngles[13][4][3] = {
   // Pose 0: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
   { {45, 80, 160}, {94, 80,  0}, {94, 56, 10}, {45, 92, 160} },
 
@@ -157,10 +157,36 @@ int poseAngles[9][4][3] = {
   { {45, 80, 160}, {94, 55, 20}, {94, 36, 130}, {45, 92, 160} },
 
   // Pose 8: STRETCH — full horizontal reach (workspace test)
-  { {45, 90,  90}, {94, 90, 90}, {94, 90,  90}, {45, 90,  90} }
+  { {45, 90,  90}, {94, 90, 90}, {94, 90,  90}, {45, 90,  90} },
+
+  // ─── WALK FORWARD POSES ───────────────────────────────────────────────────
+  // Diagonal trot gait: Phase A = FL+BR swing, Phase B = FR+BL swing
+  // VARIANT 1 — BASIC: your hip/femur values, tibia kept at standing angles
+  //
+  // Pose 9: WALK A — BASIC (FL+BR lifted)
+  //   FL: Hip=55  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
+  //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=55  Fem=47  Tib=115(keep)
+  { {55, 35, 115}, {94, 135, 45}, {94, 111, 55}, {55, 47, 115} },
+
+  // Pose 10: WALK B — BASIC (FR+BL lifted, FL+BR put down)
+  //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=45(keep)
+  //   BL: Hip=104 Fem=101 Tib=55(keep)    BR: Hip=45  Fem=37  Tib=115(stand)
+  { {45, 25, 115}, {104, 125, 45}, {104, 101, 55}, {45, 37, 115} },
+
+  // VARIANT 2 — ENHANCED: your hip/femur values + tibia retracted for ground clearance
+  //
+  // Pose 11: WALK A — ENHANCED (FL+BR lifted, tibia retracts)
+  //   FL: Hip=55  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
+  //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=55  Fem=47  Tib=130(retract)
+  { {55, 35, 130}, {94, 135, 45}, {94, 111, 55}, {55, 47, 130} },
+
+  // Pose 12: WALK B — ENHANCED (FR+BL lifted, tibia retracts)
+  //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=30(retract)
+  //   BL: Hip=104 Fem=101 Tib=30(retract)  BR: Hip=45  Fem=37  Tib=115(stand)
+  { {45, 25, 115}, {104, 125, 30}, {104, 101, 30}, {45, 37, 115} }
 };
 
-#define POSE_COUNT 9
+#define POSE_COUNT 13
 
 // Runtime servo angle state
 int servoAngles[16] = {0};
@@ -331,6 +357,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 .logh{padding:7px 14px;border-bottom:1px solid #21262d;font-size:.65rem;color:#6e7681;font-weight:700;text-transform:uppercase;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center}
 .logb{padding:8px 14px;font-family:monospace;font-size:.68rem;color:#6e7681;max-height:80px;overflow-y:auto}
 .li{padding:1px 0}.li.inf{color:#58a6ff}.li.ok2{color:#3fb950}.li.er2{color:#f85149}.li.pose{color:#a78bfa}
+
+/* ── Walk Variant Toggle Buttons ── */
+.walk-variant{
+  flex:1;padding:5px 4px;border:1px solid #30363d;
+  border-radius:6px;background:rgba(255,255,255,.04);
+  color:#6e7681;cursor:pointer;font-size:.68rem;font-weight:600;
+  transition:all .18s
+}
+.walk-variant.active{
+  background:rgba(88,166,255,.15);border-color:#58a6ff;color:#58a6ff
+}
+.walk-variant:hover:not(.active){
+  background:rgba(255,255,255,.08);color:#c9d1d9
+}
+.walk-steps-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.walk-steps-in{
+  width:52px;background:#0d1117;border:1px solid #30363d;
+  border-radius:6px;color:#e6edf3;padding:4px 6px;
+  font-size:.75rem;text-align:center;outline:none
+}
+.walk-steps-in:focus{border-color:#58a6ff}
 </style>
 </head>
 <body>
@@ -471,6 +518,52 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     </div>
     <div class="step-count" id="stepCount"></div>
   </div>
+
+  <hr class="sb-div">
+  <div class="sb-label">Walk Forward</div>
+
+  <!-- ─── Walk Forward Section ─── -->
+  <div class="play-section">
+
+    <!-- Variant selector: Basic vs Enhanced -->
+    <div style="display:flex;gap:4px;margin-bottom:4px">
+      <button id="wvBtn0" class="walk-variant active" onclick="setWalkVariant(0)">Basic</button>
+      <button id="wvBtn1" class="walk-variant"        onclick="setWalkVariant(1)">Enhanced</button>
+    </div>
+    <div style="font-size:.55rem;color:#484f58;margin-bottom:6px;padding:0 2px" id="wvDesc">
+      Tibia unchanged &mdash; safe starting mode
+    </div>
+
+    <!-- Step count input -->
+    <div class="walk-steps-row">
+      <span style="font-size:.63rem;color:#6e7681;flex:1">Steps</span>
+      <input type="number" id="walkStepsIn" class="walk-steps-in" min="0" max="200" value="10">
+      <span style="font-size:.6rem;color:#484f58">(0=&infin;)</span>
+    </div>
+
+    <!-- Walk Play / Stop button -->
+    <button class="play-btn stopped" id="walkBtn" onclick="toggleWalk()">
+      &#128694; Walk Forward
+    </button>
+
+    <!-- Live phase indicator -->
+    <div class="play-phase" id="walkPhase"></div>
+    <!-- Live step counter -->
+    <div class="step-count" id="walkStepCount"></div>
+
+    <!-- Walk speed slider -->
+    <div class="speed-row" style="margin-top:6px">
+      <span>Fast</span>
+      <input type="range" class="speed-sl" id="walkSpeedSl"
+             min="100" max="3000" value="600"
+             oninput="updWalkSpeed()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center">
+      <span id="walkSpeedVal">600</span>ms / step
+    </div>
+
+  </div><!-- end Walk Forward section -->
 
   <hr class="sb-div">
   <div class="sb-label">Foot Positions</div>
@@ -818,6 +911,83 @@ function togglePlay(){
     applyPose(0);
     lg('Trot stopped \u2192 Standing','inf');
   }
+}
+
+// ── Walk Forward ──
+let walkRunning   = false;
+let walkVariant   = 0;   // 0=Basic (poses 9+10), 1=Enhanced (poses 11+12)
+let walkPollTimer = null;
+
+function setWalkVariant(v){
+  walkVariant=v;
+  document.getElementById('wvBtn0').classList.toggle('active',v===0);
+  document.getElementById('wvBtn1').classList.toggle('active',v===1);
+  document.getElementById('wvDesc').textContent=v===0
+    ?'Tibia unchanged \u2014 safe starting mode'
+    :'Tibia retracts \u2014 better ground clearance';
+}
+
+function updWalkSpeed(){
+  document.getElementById('walkSpeedVal').textContent=
+    document.getElementById('walkSpeedSl').value;
+}
+
+async function toggleWalk(){
+  if(walkRunning){
+    try{await fetchWT('/walk?stop=1',3000);}catch(e){}
+    stopWalkUI('Stopped.');
+    return;
+  }
+  const steps  =parseInt(document.getElementById('walkStepsIn').value)||0;
+  const speed  =parseInt(document.getElementById('walkSpeedSl').value);
+  const variant=walkVariant;
+
+  const btn=document.getElementById('walkBtn');
+  btn.className='play-btn playing';
+  btn.innerHTML='\u23f9 Stop Walk';
+  walkRunning=true;
+  document.getElementById('walkPhase').textContent='Starting\u2026';
+  document.getElementById('walkStepCount').textContent='';
+
+  try{
+    // Timeout = 6s base + 2x speed for very slow walks
+    await fetchWT('/walk?steps='+steps+'&speed='+speed+'&variant='+variant, 8000);
+    document.getElementById('walkPhase').textContent=
+      steps===0?'Continuous walk\u2026':'Phase: FL+BR up';
+    document.getElementById('walkStepCount').textContent=
+      steps===0?'Steps: 0 (\u221e)':'Steps: 0 / '+steps;
+    walkPollTimer=setInterval(pollWalkStatus,400);
+    lg('Walk '+(variant===0?'Basic':'Enhanced')+' started \u2014 '+
+       (steps===0?'continuous':steps+' steps')+' @ '+speed+'ms/step','inf');
+  }catch(e){
+    walkRunning=false;
+    btn.className='play-btn stopped';
+    btn.innerHTML='\ud83d\udeb6 Walk Forward';
+    lg('Walk command failed \u2014 check WiFi','er2');
+  }
+}
+
+async function pollWalkStatus(){
+  try{
+    const r=await fetchWT('/walkstatus',2000);
+    const d=await r.json();
+    const phase=(d.steps%2===0)?'FL+BR up':'FR+BL up';
+    document.getElementById('walkPhase').textContent='Phase: '+phase;
+    document.getElementById('walkStepCount').textContent=
+      'Steps: '+d.steps+(d.target>0?' / '+d.target:' (\u221e)');
+    if(!d.running) stopWalkUI('Walk complete \u2713');
+  }catch(e){}
+}
+
+function stopWalkUI(msg){
+  walkRunning=false;
+  clearInterval(walkPollTimer);walkPollTimer=null;
+  const btn=document.getElementById('walkBtn');
+  btn.className='play-btn stopped';
+  btn.innerHTML='\ud83d\udeb6 Walk Forward';
+  document.getElementById('walkPhase').textContent=msg||'';
+  document.getElementById('walkStepCount').textContent='';
+  lg('Walk Forward \u2014 '+(msg||'stopped'),'ok2');
 }
 
 // ── Forward Kinematics ──
@@ -1259,8 +1429,10 @@ void hPose() {
     return;
   }
 
-  const char* poseNames[9] = {
-    "Initial", "Standing", "LowCrouch", "LowStand", "FL_Up", "FR_Up", "Trot_A", "Trot_B", "Stretch"
+  const char* poseNames[13] = {
+    "Initial", "Standing", "LowCrouch", "LowStand",
+    "FL_Up", "FR_Up", "Trot_A", "Trot_B", "Stretch",
+    "WalkA_Basic", "WalkB_Basic", "WalkA_Enhanced", "WalkB_Enhanced"
   };
 
   // ── STEP 1: Build JSON with TARGET angles from pose table ──
@@ -1320,6 +1492,102 @@ void hSavePose() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// =============================================================================
+// WALK FORWARD — State globals
+// =============================================================================
+volatile bool walkRunning    = false;
+volatile bool walkStop       = false;
+int           walkStepsTarget = 0;
+int           walkStepsDone   = 0;
+
+// =============================================================================
+// WALK FORWARD — Diagonal trot gait loop
+// variant 0: Basic    (poses  9+10 — your hip/femur values, tibia unchanged)
+// variant 1: Enhanced (poses 11+12 — your values + tibia retraction)
+// steps:   number of full gait cycles; 0 = run until walkStop is set
+// speedMs: duration (ms) of each moveToPose() transition
+// IMPORTANT: must be called AFTER the HTTP response has been sent so WiFi
+//            stays alive during the potentially long blocking gait loop.
+// =============================================================================
+void walkForward(int steps, int speedMs, int variant) {
+  int phaseA = (variant == 0) ? 9  : 11;  // FL+BR swing up
+  int phaseB = (variant == 0) ? 10 : 12;  // FR+BL swing up (FL+BR put down)
+
+  walkRunning   = true;
+  walkStop      = false;
+  walkStepsDone = 0;
+
+  int totalCycles = (steps == 0) ? INT_MAX : steps;
+  for (int i = 0; i < totalCycles && !walkStop; i++) {
+    moveToPose(phaseA, speedMs);   // Phase A: FL+BR swing up
+    if (walkStop) break;
+    yield();
+    moveToPose(phaseB, speedMs);   // Phase B: FR+BL swing up, FL+BR put down
+    if (walkStop) break;
+    yield();
+    walkStepsDone++;
+    Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
+                  (steps == 0) ? -1 : steps);
+  }
+
+  // Always return to standing pose at end / stop
+  moveToPose(1, 500);
+  walkRunning = false;
+  Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n",
+                walkStepsDone, variant==0?"Basic":"Enhanced");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /walk?steps=N&speed=X&variant=0|1   — start walk forward
+// GET /walk?stop=1                        — stop currently running walk
+// ─────────────────────────────────────────────────────────────────────────────
+void hWalk() {
+  // ── Stop request ──
+  if (server.hasArg("stop")) {
+    walkStop = true;
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping\"}");
+    return;
+  }
+
+  if (walkRunning) {
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"already walking\"}");
+    return;
+  }
+
+  int steps   = server.hasArg("steps")   ? server.arg("steps").toInt()                       : 4;
+  int speed   = server.hasArg("speed")   ? constrain(server.arg("speed").toInt(), 100, 3000) : 600;
+  int variant = server.hasArg("variant") ? constrain(server.arg("variant").toInt(), 0, 1)   : 0;
+  walkStepsTarget = (steps < 0) ? 0 : steps;
+
+  Serial.printf("[WALK] Requested: steps=%d speed=%dms variant=%s\n",
+                steps, speed, variant==0?"Basic":"Enhanced");
+
+  // ── Send HTTP 200 IMMEDIATELY so browser is unblocked ──
+  addCORS(server);
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"walk started\"}");
+
+  // ── Run walk loop AFTER response is sent ──
+  walkForward(walkStepsTarget, speed, variant);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /walkstatus — returns current walk state for browser polling
+// Response: {"running":bool, "steps":N, "target":N}
+// ─────────────────────────────────────────────────────────────────────────────
+void hWalkStatus() {
+  addCORS(server);
+  String j = "{\"running\":";
+  j += walkRunning ? "true" : "false";
+  j += ",\"steps\":";
+  j += walkStepsDone;
+  j += ",\"target\":";
+  j += walkStepsTarget;
+  j += "}";
+  server.send(200, "application/json", j);
+}
+
 void hSweep() {
   sweepRequested = true;
   addCORS(server);
@@ -1377,8 +1645,10 @@ void setup() {
   server.on("/leghome", hLegHome);
   server.on("/ik",      hIK);
   server.on("/pose",    hPose);    // ← NEW: pose preset endpoint
-  server.on("/savepose", hSavePose); // ← NEW: save pose endpoint
-  server.on("/sweep",   hSweep);
+  server.on("/savepose",   hSavePose);    // ← save pose to RAM
+  server.on("/walk",       hWalk);        // ← NEW: walk forward gait
+  server.on("/walkstatus", hWalkStatus);  // ← NEW: walk status poll
+  server.on("/sweep",      hSweep);
   server.begin();
 
   Serial.println("  HTTP server running on port 80.");
