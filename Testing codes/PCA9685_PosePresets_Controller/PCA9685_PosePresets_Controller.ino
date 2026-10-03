@@ -131,37 +131,36 @@ const int legMirror[4] = {1, -1, 1, -1};
 //       your specific robot, then update values here and reflash.
 // ─────────────────────────────────────────────────────────────────────────────
 // Pose presets can be updated dynamically via the Web UI for calibration
-int poseAngles[8][4][3] = {
-  // Pose 0: STANDING
+int poseAngles[9][4][3] = {
+  // Pose 0: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
+  { {45, 80, 160}, {94, 80,  0}, {94, 56, 10}, {45, 92, 160} },
+
+  // Pose 1: STANDING
   { {45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115} },
 
-  // Pose 1: LOW CROUCH (body lowered ~50mm)
+  // Pose 2: LOW CROUCH (body lowered ~50mm)
   { {45,110, 140}, {94,110, 40}, {94,110, 140}, {45,110, 140} },
 
-  // Pose 2: FL LEG UP (Front-Left raised)
-  { {45, 60, 120}, {94, 80,  0}, {94, 56, 160}, {45, 92, 160} },
+  // Pose 3: LOW STAND — intermediate crouch stance
+  { {45, 50, 130}, {94, 110, 30}, {94, 86, 40}, {45, 62, 130} },
 
-  // Pose 3: FR LEG UP (Front-Right raised)
+  // Pose 4: FL LEG UP (Front-Left raised)
+  { {45, 38, 115}, {94, 125, 35}, {94, 101, 45}, {45, 80, 160} },
+
+  // Pose 5: FR LEG UP (Front-Right raised)
   { {45, 80, 160}, {94, 55, 20}, {94, 56, 160}, {45, 92, 160} },
 
-  // Pose 4: TROT A — diagonal FL + BR raised
+  // Pose 6: TROT A — diagonal FL + BR raised
   { {45, 60, 120}, {94, 80,  0}, {94, 56, 160}, {45, 72, 140} },
 
-  // Pose 5: TROT B — diagonal FR + BL raised
+  // Pose 7: TROT B — diagonal FR + BL raised
   { {45, 80, 160}, {94, 55, 20}, {94, 36, 130}, {45, 92, 160} },
 
-  // Pose 6: STRETCH — full horizontal reach (workspace test)
-  { {45, 90,  90}, {94, 90, 90}, {94, 90,  90}, {45, 90,  90} },
-
-  // Pose 7: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
-  // FL: CH0=45, CH1=80,  CH2=160
-  // FR: CH3=94, CH4=80,  CH5=0
-  // BL: CH10=94, CH11=56, CH14=10
-  // BR: CH6=45, CH8=92,  CH9=160
-  { {45, 80, 160}, {94, 80,  0}, {94, 56, 10}, {45, 92, 160} }
+  // Pose 8: STRETCH — full horizontal reach (workspace test)
+  { {45, 90,  90}, {94, 90, 90}, {94, 90,  90}, {45, 90,  90} }
 };
 
-#define POSE_COUNT 8
+#define POSE_COUNT 9
 
 // Runtime servo angle state
 int servoAngles[16] = {0};
@@ -354,83 +353,105 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 <nav class="sidebar" id="sidebar">
   <div class="sb-label">Pose Presets</div>
 
-  <!-- Pose 0: Standing -->
+  <!-- Pose 0: Initial -->
   <div class="pose-item">
-    <button class="pose-btn active" id="pb0" onclick="applyPose(0)">
-      <span class="pose-icon">🦾</span>
-      <span class="pose-name">Standing</span>
-      <span class="pose-badge">HOME</span>
-    </button>
-    <button class="pose-save" onclick="savePose(0)" title="Save current sliders to Standing">💾</button>
-  </div>
-
-  <!-- Pose 1: Low Crouch -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb1" onclick="applyPose(1)">
-      <span class="pose-icon">⬇️</span>
-      <span class="pose-name">Low Crouch</span>
-    </button>
-    <button class="pose-save" onclick="savePose(1)" title="Save current sliders to Low Crouch">💾</button>
-  </div>
-
-  <!-- Pose 2: FL Leg Up -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb2" onclick="applyPose(2)">
-      <span class="pose-icon">↖️</span>
-      <span class="pose-name">FL Leg Up</span>
-      <span class="pose-badge">STEP</span>
-    </button>
-    <button class="pose-save" onclick="savePose(2)" title="Save current sliders to FL Leg Up">💾</button>
-  </div>
-
-  <!-- Pose 3: FR Leg Up -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb3" onclick="applyPose(3)">
-      <span class="pose-icon">↗️</span>
-      <span class="pose-name">FR Leg Up</span>
-      <span class="pose-badge">STEP</span>
-    </button>
-    <button class="pose-save" onclick="savePose(3)" title="Save current sliders to FR Leg Up">💾</button>
-  </div>
-
-  <!-- Pose 4: Trot A -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb4" onclick="applyPose(4)">
-      <span class="pose-icon">🔄</span>
-      <span class="pose-name">Trot A</span>
-      <span class="pose-badge">FL+BR</span>
-    </button>
-    <button class="pose-save" onclick="savePose(4)" title="Save current sliders to Trot A">💾</button>
-  </div>
-
-  <!-- Pose 5: Trot B -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb5" onclick="applyPose(5)">
-      <span class="pose-icon">🔃</span>
-      <span class="pose-name">Trot B</span>
-      <span class="pose-badge">FR+BL</span>
-    </button>
-    <button class="pose-save" onclick="savePose(5)" title="Save current sliders to Trot B">💾</button>
-  </div>
-
-  <!-- Pose 6: Stretch -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb6" onclick="applyPose(6)">
-      <span class="pose-icon">&#8596;&#65039;</span>
-      <span class="pose-name">Stretch</span>
-      <span class="pose-badge">TEST</span>
-    </button>
-    <button class="pose-save" onclick="savePose(6)" title="Save current sliders to Stretch">&#128190;</button>
-  </div>
-
-  <!-- Pose 7: Initial -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb7" onclick="applyPose(7)">
+    <button class="pose-btn" id="pb0" onclick="applyPose(0)">
       <span class="pose-icon">&#9881;&#65039;</span>
       <span class="pose-name">Initial</span>
       <span class="pose-badge">REF</span>
     </button>
-    <button class="pose-save" onclick="savePose(7)" title="Save current sliders to Initial">&#128190;</button>
+    <button class="pose-save" onclick="savePose(0)" title="Save current sliders to Initial">&#128190;</button>
+  </div>
+
+  <!-- Pose 1: Standing -->
+  <div class="pose-item">
+    <button class="pose-btn active" id="pb1" onclick="applyPose(1)">
+      <span class="pose-icon">🦾</span>
+      <span class="pose-name">Standing</span>
+      <span class="pose-badge">HOME</span>
+    </button>
+    <button class="pose-save" onclick="savePose(1)" title="Save current sliders to Standing">&#128190;</button>
+  </div>
+
+  <!-- Pose 2: Low Crouch -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb2" onclick="applyPose(2)">
+      <span class="pose-icon">⬇️</span>
+      <span class="pose-name">Low Crouch</span>
+    </button>
+    <button class="pose-save" onclick="savePose(2)" title="Save current sliders to Low Crouch">&#128190;</button>
+  </div>
+
+  <!-- Pose 3: Low Stand -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb3" onclick="applyPose(3)">
+      <span class="pose-icon">🔽</span>
+      <span class="pose-name">Low Stand</span>
+    </button>
+    <button class="pose-save" onclick="savePose(3)" title="Save current sliders to Low Stand">&#128190;</button>
+  </div>
+
+  <!-- Pose 4: FL Leg Up -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb4" onclick="applyPose(4)">
+      <span class="pose-icon">↖️</span>
+      <span class="pose-name">FL Leg Up</span>
+      <span class="pose-badge">STEP</span>
+    </button>
+    <button class="pose-save" onclick="savePose(4)" title="Save current sliders to FL Leg Up">&#128190;</button>
+  </div>
+
+  <!-- Pose 5: FR Leg Up -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb5" onclick="applyPose(5)">
+      <span class="pose-icon">↗️</span>
+      <span class="pose-name">FR Leg Up</span>
+      <span class="pose-badge">STEP</span>
+    </button>
+    <button class="pose-save" onclick="savePose(5)" title="Save current sliders to FR Leg Up">&#128190;</button>
+  </div>
+
+  <!-- Pose 6: Trot A -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb6" onclick="applyPose(6)">
+      <span class="pose-icon">🔄</span>
+      <span class="pose-name">Trot A</span>
+      <span class="pose-badge">FL+BR</span>
+    </button>
+    <button class="pose-save" onclick="savePose(6)" title="Save current sliders to Trot A">&#128190;</button>
+  </div>
+
+  <!-- Pose 7: Trot B -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb7" onclick="applyPose(7)">
+      <span class="pose-icon">🔃</span>
+      <span class="pose-name">Trot B</span>
+      <span class="pose-badge">FR+BL</span>
+    </button>
+    <button class="pose-save" onclick="savePose(7)" title="Save current sliders to Trot B">&#128190;</button>
+  </div>
+
+  <!-- Pose 8: Stretch -->
+  <div class="pose-item">
+    <button class="pose-btn" id="pb8" onclick="applyPose(8)">
+      <span class="pose-icon">&#8596;&#65039;</span>
+      <span class="pose-name">Stretch</span>
+      <span class="pose-badge">TEST</span>
+    </button>
+    <button class="pose-save" onclick="savePose(8)" title="Save current sliders to Stretch">&#128190;</button>
+  </div>
+
+  <hr class="sb-div">
+  <div class="sb-label">Transition Speed</div>
+  <div class="play-section" style="gap:5px">
+    <div class="speed-row">
+      <span>Instant</span>
+      <input type="range" class="speed-sl" id="transitionSl" min="0" max="3000" value="0" oninput="updTransDisplay()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center">
+      <span id="transitionVal">Instant (0ms)</span>
+    </div>
   </div>
 
   <hr class="sb-div">
@@ -558,17 +579,18 @@ const D2R=Math.PI/180, R2D=180/Math.PI;
 const CH=[[0,1,2],[3,4,5],[10,11,14],[6,8,9]];
 const MIR=[1,-1,1,-1];  // mirror: +1=left, -1=right
 
-// Pose data — mirrors C++ poseAngles[8][4][3]
+// Pose data — mirrors C++ poseAngles[9][4][3]
 // [leg 0-3][hip, femur, tibia]
 const POSES=[
+  { name:'Initial',    icon:'⚙️', angles:[[45,80,160],[94,80,0],[94,56,10],[45,92,160]] },
   { name:'Standing',   icon:'🦾', angles:[[45,25,115],[94,135,45],[94,111,55],[45,37,115]] },
   { name:'Low Crouch', icon:'⬇️', angles:[[45,110,140],[94,110,40],[94,110,140],[45,110,140]] },
-  { name:'FL Leg Up',  icon:'↖️', angles:[[45,60,120],[94,80,0],[94,56,160],[45,92,160]] },
+  { name:'Low Stand',  icon:'🔽', angles:[[45,50,130],[94,110,30],[94,86,40],[45,62,130]] },
+  { name:'FL Leg Up',  icon:'↖️', angles:[[45,38,115],[94,125,35],[94,101,45],[45,80,160]] },
   { name:'FR Leg Up',  icon:'↗️', angles:[[45,80,160],[94,55,20],[94,56,160],[45,92,160]] },
   { name:'Trot A',     icon:'🔄', angles:[[45,60,120],[94,80,0],[94,56,160],[45,72,140]] },
   { name:'Trot B',     icon:'🔃', angles:[[45,80,160],[94,55,20],[94,36,130],[45,92,160]] },
-  { name:'Stretch',    icon:'↔️', angles:[[45,90,90],[94,90,90],[94,90,90],[45,90,90]] },
-  { name:'Initial',    icon:'⚙️', angles:[[45,80,160],[94,80,0],[94,56,10],[45,92,160]] }
+  { name:'Stretch',    icon:'↔️', angles:[[45,90,90],[94,90,90],[94,90,90],[45,90,90]] }
 ];
 
 // Runtime state
@@ -579,6 +601,8 @@ let playMode=false;
 let playInterval=null;
 let playStep=0;
 let stepCount=0;
+let pollTimer=null;      // holds setInterval id so we can pause/resume
+let pollBusy=false;      // true while a pose/home command is in-flight
 
 // ── Logging ──
 function lg(m,t){
@@ -593,6 +617,24 @@ function lg(m,t){
 function cst(ok){
   document.getElementById('sd').className='sdot'+(ok?' on':'');
   document.getElementById('st').textContent=ok?'Connected \u00b7 192.168.4.1':'Disconnected';
+}
+
+// ── Cross-browser fetch with timeout (replaces AbortSignal.timeout) ──
+// Works on Chrome, Firefox, Safari, Android WebView, all versions
+function fetchWT(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal })
+    .then(r => { clearTimeout(timer); return r; })
+    .catch(e => { clearTimeout(timer); throw e; });
+}
+
+// ── Pause / Resume background poll ──
+function pausePoll(){
+  pollBusy=true;
+}
+function resumePoll(){
+  pollBusy=false;
 }
 
 // ── Slider move handler ──
@@ -618,14 +660,23 @@ function step(ch,d){
 // ── Send single channel to ESP32 ──
 async function send(ch,a){
   try{
-    const r=await fetch('/set?ch='+ch+'&angle='+a,{signal:AbortSignal.timeout(2000)});
-    if(!r.ok) throw 0;
+    const r=await fetchWT('/set?ch='+ch+'&angle='+a, 3000);
+    if(!r.ok) throw new Error('bad status');
     cst(true);
     lg('CH'+String(ch).padStart(2,'0')+' \u2192 '+a+'\u00b0','ok2');
   }catch(e){cst(false);lg('TX fail CH'+ch,'er2');}
 }
 
-// ── Apply Pose (calls ESP32 /pose endpoint) ──
+// ── Transition speed helpers ──
+function updTransDisplay(){
+  const ms=parseInt(document.getElementById('transitionSl').value);
+  document.getElementById('transitionVal').textContent = ms===0 ? 'Instant (0ms)' : ms+'ms';
+}
+function getPoseSpeed(){
+  return parseInt(document.getElementById('transitionSl').value);
+}
+
+// ── Apply Pose — sends /pose?id=N&speed=X, pauses poll while in flight ──
 async function applyPose(id){
   activePose=id;
 
@@ -634,33 +685,51 @@ async function applyPose(id){
     document.getElementById('pb'+i).classList.toggle('active',i===id);
   }
 
-  // Flash leg cards to show update
+  // Flash leg cards
   for(let c=0;c<4;c++){
     const card=document.getElementById('card'+c);
     card.classList.remove('pose-anim');
-    void card.offsetWidth; // reflow to restart animation
+    void card.offsetWidth;
     card.classList.add('pose-anim');
   }
 
-  try{
-    const r=await fetch('/pose?id='+id,{signal:AbortSignal.timeout(4000)});
-    const d=await r.json();
-    cst(true);
+  pausePoll();
+  let success=false;
+  const speedMs = getPoseSpeed();
+  // Timeout = base 5s + transition duration so we don't abort mid-move
+  const timeoutMs = 5000 + speedMs;
 
-    // Sync all sliders from returned state
-    for(let i=0;i<16;i++){
-      A[i]=d.a[i];
-      const el=document.getElementById('s'+i);
-      if(el){
-        el.value=d.a[i];
-        document.getElementById('v'+i).textContent=d.a[i]+'\u00b0';
+  // Try up to 2 times
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const r=await fetchWT('/pose?id='+id+'&speed='+speedMs, timeoutMs);
+      if(!r.ok) throw new Error('bad status');
+      const d=await r.json();
+      cst(true);
+      // Sync all sliders from returned state
+      for(let i=0;i<16;i++){
+        A[i]=d.a[i];
+        const el=document.getElementById('s'+i);
+        if(el){
+          el.value=d.a[i];
+          document.getElementById('v'+i).textContent=d.a[i]+'\u00b0';
+        }
+      }
+      updAllFK();
+      lg('\u2605 Pose \u2192 '+POSES[id].name+(speedMs>0?' ('+speedMs+'ms)':''),'pose');
+      success=true;
+      break;
+    }catch(e){
+      if(attempt===0){
+        lg('Pose attempt 1 failed, retrying...','inf');
+        await new Promise(res=>setTimeout(res,400));
       }
     }
-    updAllFK();
-    lg('\u2605 Pose \u2192 '+POSES[id].name+' ('+POSES[id].icon+')','pose');
-  }catch(e){
-    // Fallback: apply pose locally from JS data
-    lg('ESP32 unreachable \u2014 applying pose locally','er2');
+  }
+
+  if(!success){
+    // Final fallback: update UI only, motors won't move
+    lg('\u26a0 Cannot reach ESP32 — UI updated only, motors unchanged','er2');
     const ang=POSES[id].angles;
     for(let leg=0;leg<4;leg++){
       for(let j=0;j<3;j++){
@@ -673,11 +742,12 @@ async function applyPose(id){
     updAllFK();
     cst(false);
   }
+
+  resumePoll();
 }
 
 // ── Save Pose (Current sliders to Preset) ──
 async function savePose(id){
-  // 1. Grab current angles for all 12 joints based on CH array
   const newAng = [];
   let urlArgs = `?id=${id}`;
   for(let leg=0; leg<4; leg++){
@@ -690,23 +760,19 @@ async function savePose(id){
     }
     newAng.push(legAng);
   }
-
-  // 2. Format C++ array string to print to log
   const cppCode = `{ {${newAng[0].join(',')}}, {${newAng[1].join(',')}}, {${newAng[2].join(',')}}, {${newAng[3].join(',')}} }`;
-  
-  // 3. Update local JS array
   POSES[id].angles = newAng;
-
-  // 4. Send to ESP32
+  pausePoll();
   try {
-    const r = await fetch('/savepose' + urlArgs, {signal:AbortSignal.timeout(3000)});
-    if(!r.ok) throw 0;
+    const r = await fetchWT('/savepose' + urlArgs, 4000);
+    if(!r.ok) throw new Error('bad status');
     lg(`Saved ${POSES[id].name} successfully in RAM!`,'ok2');
-    lg(`COPY THIS TO C++ CODE: `,'inf');
+    lg('COPY THIS TO C++ CODE: ','inf');
     lg(cppCode, 'pose');
   } catch(e) {
     lg('Failed to save pose to ESP32','er2');
   }
+  resumePoll();
 }
 
 // ── Play Trot Mode ──
@@ -723,7 +789,7 @@ function startTrotCycle(ms){
   playInterval=setInterval(async()=>{
     playStep=(playStep+1)%2;
     stepCount++;
-    const poseId=playStep===0?4:5;
+    const poseId=playStep===0?6:7; // 6=Trot A, 7=Trot B
     document.getElementById('playPhase').textContent='Phase: '+(playStep===0?'FL+BR up':'FR+BL up');
     document.getElementById('stepCount').textContent='Steps: '+stepCount;
     await applyPose(poseId);
@@ -733,13 +799,11 @@ function startTrotCycle(ms){
 function togglePlay(){
   playMode=!playMode;
   const btn=document.getElementById('playBtn');
-
   if(playMode){
     btn.className='play-btn playing';
     btn.innerHTML='&#9646;&#9646; Stop Trot';
     playStep=0; stepCount=0;
     const ms=parseInt(document.getElementById('speedSl').value);
-    // Start immediately at Trot A
     applyPose(4);
     document.getElementById('playPhase').textContent='Phase: FL+BR up';
     document.getElementById('stepCount').textContent='Steps: 0';
@@ -751,7 +815,7 @@ function togglePlay(){
     clearInterval(playInterval); playInterval=null;
     document.getElementById('playPhase').textContent='';
     document.getElementById('stepCount').textContent='';
-    applyPose(0); // return to Standing
+    applyPose(0);
     lg('Trot stopped \u2192 Standing','inf');
   }
 }
@@ -773,7 +837,6 @@ function updFK(l){
   document.getElementById('fx'+l).textContent=p.x;
   document.getElementById('fy'+l).textContent=p.y;
   document.getElementById('fz'+l).textContent=p.z;
-  // Update mini sidebar FK
   document.getElementById('mfk'+l).textContent=p.x+', '+p.y+', '+p.z;
 }
 function updAllFK(){for(let i=0;i<4;i++)updFK(i);}
@@ -811,12 +874,14 @@ async function applyIK(l){
   }
   const c=CH[l];
   const ang=[res.hip,res.fem,res.tib];
+  pausePoll();
   for(let i=0;i<3;i++){
     document.getElementById('s'+c[i]).value=ang[i];
     document.getElementById('v'+c[i]).textContent=ang[i]+'\u00b0';
     A[c[i]]=ang[i];
     await send(c[i],ang[i]);
   }
+  resumePoll();
   updFK(l);
   st.className='ikst ok';
   st.textContent='\u2713 H='+res.hip+'\u00b0 F='+res.fem+'\u00b0 T='+res.tib+'\u00b0';
@@ -825,8 +890,9 @@ async function applyIK(l){
 
 // ── Leg HOME ──
 async function legHome(l){
+  pausePoll();
   try{
-    const r=await fetch('/leghome?leg='+l,{signal:AbortSignal.timeout(3000)});
+    const r=await fetchWT('/leghome?leg='+l, 4000);
     const d=await r.json();
     const c=CH[l];
     for(let i=0;i<3;i++){
@@ -835,14 +901,17 @@ async function legHome(l){
       document.getElementById('v'+c[i]).textContent=d.a[i]+'\u00b0';
     }
     updFK(l);
+    cst(true);
     lg('Leg '+['FL','FR','BL','BR'][l]+' \u2192 HOME','ok2');
-  }catch(e){lg('legHome failed','er2');}
+  }catch(e){cst(false);lg('legHome failed — check WiFi','er2');}
+  resumePoll();
 }
 
 // ── All HOME ──
 async function allHome(){
+  pausePoll();
   try{
-    const r=await fetch('/home',{signal:AbortSignal.timeout(5000)});
+    const r=await fetchWT('/home', 6000);
     const d=await r.json();
     for(let i=0;i<16;i++){
       A[i]=d.a[i];
@@ -850,24 +919,26 @@ async function allHome(){
       if(el){el.value=d.a[i];document.getElementById('v'+i).textContent=d.a[i]+'\u00b0';}
     }
     updAllFK();
-    // Highlight Standing as active
     for(let i=0;i<POSES.length;i++) document.getElementById('pb'+i).classList.toggle('active',i===0);
     activePose=0;
+    cst(true);
     lg('All 12 servos \u2192 HOME (Standing)','ok2');
-  }catch(e){lg('allHome failed','er2');}
+  }catch(e){cst(false);lg('allHome failed — check WiFi','er2');}
+  resumePoll();
 }
 
 // ── Sweep Test ──
 async function doSweep(){
   lg('Sweep test started on BR_FEMUR (CH8)...','inf');
-  try{await fetch('/sweep',{signal:AbortSignal.timeout(2000)});lg('Sweep running...','ok2');}
+  try{await fetchWT('/sweep', 3000);lg('Sweep running...','ok2');}
   catch(e){lg('Sweep trigger failed','er2');}
 }
 
-// ── State Poll ──
+// ── State Poll — skips if a command is in-flight ──
 async function poll(){
+  if(pollBusy) return;   // don't collide with pose / home commands
   try{
-    const r=await fetch('/state',{signal:AbortSignal.timeout(1500)});
+    const r=await fetchWT('/state', 2000);
     const d=await r.json();
     cst(true);
     let changed=false;
@@ -890,8 +961,9 @@ document.getElementById('speedSl').addEventListener('input', updateSpeedDisplay)
 window.onload=function(){
   updAllFK();
   poll();
-  setInterval(poll,1800);
-  lg('RUNNER4 v3.0 — L1='+L1+' L2='+L2+' L3='+L3+' mm  |  7 Pose Presets + Play Trot','inf');
+  pollTimer=setInterval(poll, 3000);  // 3s poll — less aggressive, avoids collision
+  lg('RUNNER4 v3.0 — L1='+L1+' L2='+L2+' L3='+L3+' mm  |  8 Pose Presets + Play Trot','inf');
+  lg('Tip: if motors not moving, check WiFi connection (status top-right)','inf');
 };
 </script>
 </body>
@@ -911,22 +983,86 @@ void setServo(uint8_t ch, int angle) {
   angle = constrain(angle, 0, 180);
   servoAngles[ch] = angle;
   pwm.setPWM(ch, 0, angleToPulse(angle));
-  Serial.printf("  CH%02d -> %d deg\n", ch, angle);
+  // Note: Serial.printf removed here — it was blocking the main loop
+  // and causing WiFi TCP connections to time out while waiting for HTTP responses.
+  // Use the Serial output in setup/loop only for debug at boot.
 }
 
 void setAllServosHome() {
   Serial.println("[HOME] All 12 servos -> STANDING:");
   for (int leg = 0; leg < 4; leg++) {
     for (int joint = 0; joint < 3; joint++) {
-      setServo(legChannels[leg][joint], poseAngles[0][leg][joint]);
+      setServo(legChannels[leg][joint], poseAngles[1][leg][joint]); // 1=Standing
+      delay(10); // stagger servo starts to reduce current spike
     }
   }
+  Serial.println("[HOME] Done.");
 }
 
 void setLegHome(int leg) {
   for (int joint = 0; joint < 3; joint++) {
-    setServo(legChannels[leg][joint], poseAngles[0][leg][joint]);
+    setServo(legChannels[leg][joint], poseAngles[1][leg][joint]); // 1=Standing
   }
+}
+
+// =============================================================================
+// MOVE TO POSE — Linear interpolation over speedMs milliseconds
+// Called AFTER HTTP response is sent so WiFi stays alive during movement.
+// speedMs=0 means instant jump (no interpolation)
+// =============================================================================
+void moveToPose(int id, int speedMs) {
+  if (speedMs <= 0) {
+    // Instant: just jump to target
+    for (int leg = 0; leg < 4; leg++) {
+      for (int joint = 0; joint < 3; joint++) {
+        setServo(legChannels[leg][joint], poseAngles[id][leg][joint]);
+        delay(8);
+      }
+      yield();
+    }
+    return;
+  }
+
+  // Find the largest angle difference among all 12 servos
+  // This determines number of interpolation steps (1 degree per step)
+  int maxDiff = 0;
+  for (int leg = 0; leg < 4; leg++) {
+    for (int joint = 0; joint < 3; joint++) {
+      uint8_t ch = legChannels[leg][joint];
+      int diff = abs(poseAngles[id][leg][joint] - servoAngles[ch]);
+      if (diff > maxDiff) maxDiff = diff;
+    }
+  }
+
+  if (maxDiff == 0) return; // already at target, nothing to do
+
+  // Snapshot start angles before we begin moving
+  int startAngles[16];
+  memcpy(startAngles, servoAngles, sizeof(servoAngles));
+
+  // Interpolate: step through from 0 to maxDiff
+  // Each step moves every servo proportionally toward its target
+  unsigned long moveStart = millis();
+  for (int step = 1; step <= maxDiff; step++) {
+    float t = (float)step / (float)maxDiff;  // 0.0 -> 1.0
+
+    for (int leg = 0; leg < 4; leg++) {
+      for (int joint = 0; joint < 3; joint++) {
+        uint8_t ch = legChannels[leg][joint];
+        int angle = startAngles[ch] + (int)roundf(t * (poseAngles[id][leg][joint] - startAngles[ch]));
+        setServo(ch, angle);
+      }
+    }
+
+    // Precise timing: hold until this step's time slot
+    unsigned long stepTarget = moveStart + (unsigned long)((long)speedMs * step / maxDiff);
+    unsigned long now = millis();
+    if (stepTarget > now) delay(stepTarget - now);
+    yield(); // keep WiFi background task alive
+  }
+
+  Serial.printf("[POSE] Transition done. Steps=%d, duration=%lums\n",
+                maxDiff, millis() - moveStart);
 }
 
 // =============================================================================
@@ -1048,12 +1184,17 @@ void hState() {
   server.send(200, "application/json", stateJSON());
 }
 
+// hHome — send response FIRST, then move (keeps WiFi alive)
 void hHome() {
-  setAllServosHome();
   addCORS(server);
+  // Build target JSON from pose 0 (standing) before moving
   server.send(200, "application/json", stateJSON());
+  // Now move servos after HTTP response is already sent
+  setAllServosHome();
+  Serial.println("[WEB] All HOME done.");
 }
 
+// hLegHome — send response FIRST, then move
 void hLegHome() {
   if (!server.hasArg("leg")) {
     server.send(400, "application/json", "{\"error\":\"missing leg\"}");
@@ -1064,10 +1205,11 @@ void hLegHome() {
     server.send(400, "application/json", "{\"error\":\"invalid leg (0-3)\"}");
     return;
   }
-  setLegHome(leg);
   addCORS(server);
   server.send(200, "application/json", legJSON(leg));
-  Serial.printf("[WEB] Leg %d -> HOME\n", leg);
+  // Move AFTER response sent
+  setLegHome(leg);
+  Serial.printf("[WEB] Leg %d -> HOME done.\n", leg);
 }
 
 void hIK() {
@@ -1103,8 +1245,8 @@ void hIK() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /pose?id=N  — apply one of 7 named pose presets to all 12 servos
-// id: 0=Standing, 1=LowCrouch, 2=FLUp, 3=FRUp, 4=TrotA, 5=TrotB, 6=Stretch
+// GET /pose?id=N  — apply one of 8 named pose presets to all 12 servos
+// KEY: HTTP response is sent FIRST, servos move AFTER — prevents WiFi timeout
 // ─────────────────────────────────────────────────────────────────────────────
 void hPose() {
   if (!server.hasArg("id")) {
@@ -1113,23 +1255,39 @@ void hPose() {
   }
   int id = server.arg("id").toInt();
   if (id < 0 || id >= POSE_COUNT) {
-    server.send(400, "application/json", "{\"error\":\"invalid pose id (0-6)\"}");
+    server.send(400, "application/json", "{\"error\":\"invalid pose id (0-8)\"}");
     return;
   }
 
-  const char* poseNames[7] = {
-    "Standing", "LowCrouch", "FL_Up", "FR_Up", "Trot_A", "Trot_B", "Stretch"
+  const char* poseNames[9] = {
+    "Initial", "Standing", "LowCrouch", "LowStand", "FL_Up", "FR_Up", "Trot_A", "Trot_B", "Stretch"
   };
 
-  Serial.printf("[POSE] -> %s (%d)\n", poseNames[id], id);
+  // ── STEP 1: Build JSON with TARGET angles from pose table ──
+  // Build using poseAngles[id] so client gets correct target positions immediately
+  int targetAngles[16];
+  memcpy(targetAngles, servoAngles, sizeof(servoAngles)); // start from current
   for (int leg = 0; leg < 4; leg++) {
     for (int joint = 0; joint < 3; joint++) {
-      setServo(legChannels[leg][joint], poseAngles[id][leg][joint]);
+      targetAngles[legChannels[leg][joint]] = poseAngles[id][leg][joint];
     }
   }
+  String respJson = "{\"a\":[";
+  for (int i = 0; i < 16; i++) {
+    respJson += targetAngles[i];
+    if (i < 15) respJson += ',';
+  }
+  respJson += "]}";
 
+  // ── STEP 2: Send HTTP response IMMEDIATELY — browser is unblocked ──
   addCORS(server);
-  server.send(200, "application/json", stateJSON());
+  server.send(200, "application/json", respJson);
+  Serial.printf("[POSE] -> %s (%d) — response sent, moving servos now\n", poseNames[id], id);
+
+  // ── STEP 3: Smooth interpolated move AFTER response — WiFi stays alive ──
+  int speedMs = server.hasArg("speed") ? constrain(server.arg("speed").toInt(), 0, 5000) : 0;
+  moveToPose(id, speedMs);
+  Serial.printf("[POSE] -> %s done.\n", poseNames[id]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
