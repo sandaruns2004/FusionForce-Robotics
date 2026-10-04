@@ -2,9 +2,9 @@
 // S1 (index 0) = far left ... S9 (index 8) = far right, 10 mm spacing
 #define NUM_SENSORS   9
 #define RAW_TEST      false    // true: only print raw ADC values (step 1). false: full line following
-#define WHITE_IS_HIGH true   // measured: black reads HIGH, white reads LOW (pull-up circuit)
+#define WHITE_IS_HIGH true   // if white is high keep true , else false
 
-const int sensorPins[NUM_SENSORS] = {13, 14, 25, 26, 27, 32, 33, 34, 35};
+const int sensorPins[9] = {35, 34, 33, 32, 27, 26, 25, 14, 13};
 const float SENSOR_SPACING_MM = 10.0;
 const float LINE_THRESH       = 0.5;    // normalised 0..1, above = "on white line"
 const int   CYCLE_MS          = 20;     // 50 Hz control loop
