@@ -1547,60 +1547,50 @@ void walkForward(int steps, int speedMs, int variant) {
 
   int totalCycles = (steps == 0) ? INT_MAX : steps;
   
-  int currentTarget[4][3];
-  memcpy(currentTarget, servoAngles, sizeof(currentTarget));
+  // Base standing target
+  const int t_stand[4][3] = { {45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115} };
 
   for (int i = 0; i < totalCycles && !walkStop; i++) {
     
-    // Step 1: FL and BR moving the femur from 25 to 45 and 37 to 57
-    currentTarget[0][1] = 45; // FL Femur
-    currentTarget[3][1] = 57; // BR Femur
-    moveToTarget(currentTarget, speedMs);
+    // Step 1: FL femur to 45, BR femur to 57
+    const int t1[4][3] = { {45, 45, 115}, {64, 130, 45}, {94, 116, 55}, {45, 57, 115} };
+    moveToTarget(t1, speedMs);
     if (walkStop) break; yield();
 
-    // Step 2: hips from 45 to 15 and 45 to 75
-    currentTarget[0][0] = 15; // FL Hip
-    currentTarget[3][0] = 75; // BR Hip
-    moveToTarget(currentTarget, speedMs);
+    // Step 2: FL hip to 15, BR hip to 75
+    const int t2[4][3] = { {15, 45, 115}, {64, 130, 45}, {94, 116, 55}, {75, 57, 115} };
+    moveToTarget(t2, speedMs);
     if (walkStop) break; yield();
 
-    // Step 3: femurs from 45 to 20 and 57 to 32
-    currentTarget[0][1] = 20; // FL Femur
-    currentTarget[3][1] = 32; // BR Femur
-    moveToTarget(currentTarget, speedMs);
+    // Step 3: FL femur to 20, BR femur to 32
+    const int t3[4][3] = { {15, 20, 115}, {64, 130, 45}, {94, 116, 55}, {75, 32, 115} };
+    moveToTarget(t3, speedMs);
     if (walkStop) break; yield();
 
-    // Step 4: FR & BL femurs lift to 115 and 91
-    currentTarget[1][1] = 115; // FR Femur
-    currentTarget[2][1] = 91;  // BL Femur
-    moveToTarget(currentTarget, speedMs);
+    // Step 4: FR femur to 115, BL femur to 91 (Separated to move exactly 2 motors)
+    const int t4[4][3] = { {15, 20, 115}, {64, 115, 45}, {94, 91, 55}, {75, 32, 115} };
+    moveToTarget(t4, speedMs);
     if (walkStop) break; yield();
 
-    // Step 5: FL & BR hips return to 45
-    currentTarget[0][0] = 45;  // FL Hip
-    currentTarget[3][0] = 45;  // BR Hip
-    moveToTarget(currentTarget, speedMs);
+    // Step 5: FL hip to 45, BR hip to 45 (Separated to move exactly 2 motors)
+    const int t5[4][3] = { {45, 20, 115}, {64, 115, 45}, {94, 91, 55}, {45, 32, 115} };
+    moveToTarget(t5, speedMs);
     if (walkStop) break; yield();
 
-    // Step 6: FR & BL hips from 94 to 124 and 94 to 64
-    currentTarget[1][0] = 124; // FR Hip
-    currentTarget[2][0] = 64;  // BL Hip
-    moveToTarget(currentTarget, speedMs);
+    // Step 6: FR hip to 124, BL hip to 64
+    const int t6[4][3] = { {45, 20, 115}, {124, 115, 45}, {64, 91, 55}, {45, 32, 115} };
+    moveToTarget(t6, speedMs);
     if (walkStop) break; yield();
 
-    // Step 7: FR & BL femurs from 115 to 130 and 91 to 116
-    currentTarget[1][1] = 130; // FR Femur
-    currentTarget[2][1] = 116; // BL Femur
-    moveToTarget(currentTarget, speedMs);
+    // Step 7: FR femur to 130, BL femur to 116
+    const int t7[4][3] = { {45, 20, 115}, {124, 130, 45}, {64, 116, 55}, {45, 32, 115} };
+    moveToTarget(t7, speedMs);
     if (walkStop) break; yield();
 
-    // Step 8: FR & BL hips from 124 to 64 and 64 to 94
-    currentTarget[1][0] = 64;  // FR Hip (Reverted to EXACTLY 64 as requested)
-    currentTarget[2][0] = 94;  // BL Hip
-    moveToTarget(currentTarget, speedMs);
+    // Step 8: FR hip to 64, BL hip to 94 (As explicitly requested by user)
+    const int t8[4][3] = { {45, 20, 115}, {64, 130, 45}, {94, 116, 55}, {45, 32, 115} };
+    moveToTarget(t8, speedMs);
     if (walkStop) break; yield();
-
-    // Note: Step 8 (return to standing) removed from within the loop as requested.
     
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
