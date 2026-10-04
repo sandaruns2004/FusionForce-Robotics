@@ -1570,28 +1570,32 @@ void walkForward(int steps, int speedMs, int variant) {
     moveToTarget(currentTarget, speedMs);
     if (walkStop) break; yield();
 
-    // Step 4: FL & BR hips return to 45 WHILE FR & BL femurs lift to 115 and 91
-    currentTarget[0][0] = 45;  // FL Hip
-    currentTarget[3][0] = 45;  // BR Hip
+    // Step 4: FR & BL femurs lift to 115 and 91
     currentTarget[1][1] = 115; // FR Femur
     currentTarget[2][1] = 91;  // BL Femur
     moveToTarget(currentTarget, speedMs);
     if (walkStop) break; yield();
 
-    // Step 5: FR & BL hips from 94 to 124 and 94 to 64
+    // Step 5: FL & BR hips return to 45
+    currentTarget[0][0] = 45;  // FL Hip
+    currentTarget[3][0] = 45;  // BR Hip
+    moveToTarget(currentTarget, speedMs);
+    if (walkStop) break; yield();
+
+    // Step 6: FR & BL hips from 94 to 124 and 94 to 64
     currentTarget[1][0] = 124; // FR Hip
     currentTarget[2][0] = 64;  // BL Hip
     moveToTarget(currentTarget, speedMs);
     if (walkStop) break; yield();
 
-    // Step 6: FR & BL femurs from 115 to 130 and 91 to 116
+    // Step 7: FR & BL femurs from 115 to 130 and 91 to 116
     currentTarget[1][1] = 130; // FR Femur
     currentTarget[2][1] = 116; // BL Femur
     moveToTarget(currentTarget, speedMs);
     if (walkStop) break; yield();
 
-    // Step 7: FR & BL hips from 124 to 64 and 64 to 94
-    currentTarget[1][0] = 64;  // FR Hip
+    // Step 8: FR & BL hips from 124 to 64 and 64 to 94
+    currentTarget[1][0] = 64;  // FR Hip (Reverted to EXACTLY 64 as requested)
     currentTarget[2][0] = 94;  // BL Hip
     moveToTarget(currentTarget, speedMs);
     if (walkStop) break; yield();
