@@ -1551,10 +1551,22 @@ void walkForward(int steps, int speedMs, int variant) {
     if (walkStop)
       break;
     yield();
-    moveToPose(phaseB, speedMs); // Phase B: FR+BL swing up, FL+BR put down
+
+    moveToPose(1, speedMs); // Stand: all legs down
     if (walkStop)
       break;
     yield();
+
+    moveToPose(phaseB, speedMs); // Phase B: FR+BL swing up
+    if (walkStop)
+      break;
+    yield();
+
+    moveToPose(1, speedMs); // Stand: all legs down
+    if (walkStop)
+      break;
+    yield();
+
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
                   (steps == 0) ? -1 : steps);
