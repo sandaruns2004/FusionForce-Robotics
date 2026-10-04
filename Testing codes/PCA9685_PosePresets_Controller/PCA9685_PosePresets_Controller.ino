@@ -48,68 +48,68 @@
 //   CH 6:BR_HIP  CH 8:BR_FEMUR  CH 9:BR_TIBIA
 // =============================================================================
 
-#include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
-#include <WiFi.h>
 #include <WebServer.h>
+#include <WiFi.h>
+#include <Wire.h>
 #include <math.h>
 
-struct Vec3f { float x, y, z; };
+struct Vec3f {
+  float x, y, z;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WiFi — Access Point mode (no external router required)
 // ─────────────────────────────────────────────────────────────────────────────
-const char* AP_SSID = "RUNNER4-Config";
-const char* AP_PASS = "runner4robot";
+const char *AP_SSID = "RUNNER4-Config";
+const char *AP_PASS = "runner4robot";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESP32-S3 I2C Pins
 // ─────────────────────────────────────────────────────────────────────────────
-#define I2C_SDA  8
-#define I2C_SCL  9
+#define I2C_SDA 8
+#define I2C_SCL 9
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PCA9685 Servo Driver
 // ─────────────────────────────────────────────────────────────────────────────
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 
-#define SERVOMIN    150    // Pulse tick at   0 deg (~732 us)
-#define SERVOMAX    600    // Pulse tick at 180 deg (~2930 us)
-#define SERVO_FREQ   50    // 50 Hz standard servo update rate
+#define SERVOMIN 150  // Pulse tick at   0 deg (~732 us)
+#define SERVOMAX 600  // Pulse tick at 180 deg (~2930 us)
+#define SERVO_FREQ 50 // 50 Hz standard servo update rate
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Robot Leg Geometry — Link Lengths (mm)
 // ─────────────────────────────────────────────────────────────────────────────
-#define L1_MM  30.0f    // Coxa  (hip offset)
-#define L2_MM  60.0f    // Femur (upper leg)
-#define L3_MM  80.0f    // Tibia (lower leg)
+#define L1_MM 30.0f // Coxa  (hip offset)
+#define L2_MM 60.0f // Femur (upper leg)
+#define L3_MM 80.0f // Tibia (lower leg)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PCA9685 Channel Definitions
 // ─────────────────────────────────────────────────────────────────────────────
-#define FL_HIP    0
-#define FL_FEMUR  1
-#define FL_TIBIA  2
-#define FR_HIP    3
-#define FR_FEMUR  4
-#define FR_TIBIA  5
-#define BL_HIP   10
+#define FL_HIP 0
+#define FL_FEMUR 1
+#define FL_TIBIA 2
+#define FR_HIP 3
+#define FR_FEMUR 4
+#define FR_TIBIA 5
+#define BL_HIP 10
 #define BL_FEMUR 11
 #define BL_TIBIA 14
-#define BR_HIP    6
-#define BR_FEMUR  8
-#define BR_TIBIA  9
+#define BR_HIP 6
+#define BR_FEMUR 8
+#define BR_TIBIA 9
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Leg channel map: legChannels[leg][0=hip, 1=femur, 2=tibia]
 // Leg index: 0=FL, 1=FR, 2=BL, 3=BR
 // ─────────────────────────────────────────────────────────────────────────────
-const uint8_t legChannels[4][3] = {
-  {FL_HIP, FL_FEMUR, FL_TIBIA},
-  {FR_HIP, FR_FEMUR, FR_TIBIA},
-  {BL_HIP, BL_FEMUR, BL_TIBIA},
-  {BR_HIP, BR_FEMUR, BR_TIBIA}
-};
+const uint8_t legChannels[4][3] = {{FL_HIP, FL_FEMUR, FL_TIBIA},
+                                   {FR_HIP, FR_FEMUR, FR_TIBIA},
+                                   {BL_HIP, BL_FEMUR, BL_TIBIA},
+                                   {BR_HIP, BR_FEMUR, BR_TIBIA}};
 
 // Mirror: Left legs (+1), Right legs (-1)
 const int legMirror[4] = {1, -1, 1, -1};
@@ -132,59 +132,61 @@ const int legMirror[4] = {1, -1, 1, -1};
 // ─────────────────────────────────────────────────────────────────────────────
 // Pose presets can be updated dynamically via the Web UI for calibration
 int poseAngles[13][4][3] = {
-  // Pose 0: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
-  { {45, 80, 160}, {94, 80,  0}, {94, 56, 10}, {45, 92, 160} },
+    // Pose 0: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
+    {{45, 80, 160}, {94, 80, 0}, {94, 56, 10}, {45, 92, 160}},
 
-  // Pose 1: STANDING
-  { {45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115} },
+    // Pose 1: STANDING
+    {{45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115}},
 
-  // Pose 2: LOW CROUCH (body lowered ~50mm)
-  { {45,110, 140}, {94,110, 40}, {94,110, 140}, {45,110, 140} },
+    // Pose 2: LOW CROUCH (body lowered ~50mm)
+    {{45, 110, 140}, {94, 110, 40}, {94, 110, 140}, {45, 110, 140}},
 
-  // Pose 3: LOW STAND — intermediate crouch stance
-  { {45, 50, 130}, {94, 110, 30}, {94, 86, 40}, {45, 62, 130} },
+    // Pose 3: LOW STAND — intermediate crouch stance
+    {{45, 50, 130}, {94, 110, 30}, {94, 86, 40}, {45, 62, 130}},
 
-  // Pose 4: FL LEG UP (Front-Left raised)
-  { {45, 38, 115}, {94, 125, 35}, {94, 101, 45}, {45, 80, 160} },
+    // Pose 4: FL LEG UP (Front-Left raised)
+    {{45, 38, 115}, {94, 125, 35}, {94, 101, 45}, {45, 80, 160}},
 
-  // Pose 5: FR LEG UP (Front-Right raised)
-  { {45, 80, 160}, {94, 55, 20}, {94, 56, 160}, {45, 92, 160} },
+    // Pose 5: FR LEG UP (Front-Right raised)
+    {{45, 80, 160}, {94, 55, 20}, {94, 56, 160}, {45, 92, 160}},
 
-  // Pose 6: TROT A — diagonal FL + BR raised
-  { {45, 60, 120}, {94, 80,  0}, {94, 56, 160}, {45, 72, 140} },
+    // Pose 6: TROT A — diagonal FL + BR raised
+    {{45, 60, 120}, {94, 80, 0}, {94, 56, 160}, {45, 72, 140}},
 
-  // Pose 7: TROT B — diagonal FR + BL raised
-  { {45, 80, 160}, {94, 55, 20}, {94, 36, 130}, {45, 92, 160} },
+    // Pose 7: TROT B — diagonal FR + BL raised
+    {{45, 80, 160}, {94, 55, 20}, {94, 36, 130}, {45, 92, 160}},
 
-  // Pose 8: STRETCH — full horizontal reach (workspace test)
-  { {45, 90,  90}, {94, 90, 90}, {94, 90,  90}, {45, 90,  90} },
+    // Pose 8: STRETCH — full horizontal reach (workspace test)
+    {{45, 90, 90}, {94, 90, 90}, {94, 90, 90}, {45, 90, 90}},
 
-  // ─── WALK FORWARD POSES ───────────────────────────────────────────────────
-  // Diagonal trot gait: Phase A = FL+BR swing, Phase B = FR+BL swing
-  // VARIANT 1 — BASIC: your hip/femur values, tibia kept at standing angles
-  //
-  // Pose 9: WALK A — BASIC (FL+BR lifted)
-  //   FL: Hip=60  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
-  //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=60  Fem=47  Tib=115(keep)
-  { {60, 35, 115}, {94, 135, 45}, {94, 111, 55}, {60, 47, 115} },
+    // ─── WALK FORWARD POSES
+    // ───────────────────────────────────────────────────
+    // Diagonal trot gait: Phase A = FL+BR swing, Phase B = FR+BL swing
+    // VARIANT 1 — BASIC: your hip/femur values, tibia kept at standing angles
+    //
+    // Pose 9: WALK A — BASIC (FL+BR lifted)
+    //   FL: Hip=60  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
+    //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=60  Fem=47  Tib=115(keep)
+    {{15, 35, 115}, {94, 135, 45}, {94, 111, 55}, {75, 47, 115}},
 
-  // Pose 10: WALK B — BASIC (FR+BL lifted, FL+BR put down)
-  //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=45(keep)
-  //   BL: Hip=104 Fem=101 Tib=55(keep)    BR: Hip=45  Fem=37  Tib=115(stand)
-  { {45, 25, 115}, {104, 125, 45}, {104, 101, 55}, {45, 37, 115} },
+    // Pose 10: WALK B — BASIC (FR+BL lifted, FL+BR put down)
+    //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=45(keep)
+    //   BL: Hip=104 Fem=101 Tib=55(keep)    BR: Hip=45  Fem=37  Tib=115(stand)
+    {{45, 25, 115}, {124, 125, 45}, {64, 101, 55}, {45, 37, 115}},
 
-  // VARIANT 2 — ENHANCED: your hip/femur values + tibia retracted for ground clearance
-  //
-  // Pose 11: WALK A — ENHANCED (FL+BR lifted, tibia retracts)
-  //   FL: Hip=60  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
-  //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=60  Fem=47  Tib=130(retract)
-  { {60, 35, 130}, {94, 135, 45}, {94, 111, 55}, {60, 47, 130} },
+    // VARIANT 2 — ENHANCED: your hip/femur values + tibia retracted for ground
+    // clearance
+    //
+    // Pose 11: WALK A — ENHANCED (FL+BR lifted, tibia retracts)
+    //   FL: Hip=60  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
+    //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=60  Fem=47
+    //   Tib=130(retract)
+    {{15, 35, 130}, {94, 135, 45}, {94, 111, 55}, {75, 47, 130}},
 
-  // Pose 12: WALK B — ENHANCED (FR+BL lifted, tibia retracts)
-  //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=30(retract)
-  //   BL: Hip=104 Fem=101 Tib=30(retract)  BR: Hip=45  Fem=37  Tib=115(stand)
-  { {45, 25, 115}, {104, 125, 30}, {104, 101, 30}, {45, 37, 115} }
-};
+    // Pose 12: WALK B — ENHANCED (FR+BL lifted, tibia retracts)
+    //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=30(retract)
+    //   BL: Hip=104 Fem=101 Tib=30(retract)  BR: Hip=45  Fem=37  Tib=115(stand)
+    {{45, 25, 115}, {124, 125, 30}, {64, 101, 30}, {45, 37, 115}}};
 
 #define POSE_COUNT 13
 
@@ -1154,15 +1156,16 @@ void setServo(uint8_t ch, int angle) {
   servoAngles[ch] = angle;
   pwm.setPWM(ch, 0, angleToPulse(angle));
   // Note: Serial.printf removed here — it was blocking the main loop
-  // and causing WiFi TCP connections to time out while waiting for HTTP responses.
-  // Use the Serial output in setup/loop only for debug at boot.
+  // and causing WiFi TCP connections to time out while waiting for HTTP
+  // responses. Use the Serial output in setup/loop only for debug at boot.
 }
 
 void setAllServosHome() {
   Serial.println("[HOME] All 12 servos -> STANDING:");
   for (int leg = 0; leg < 4; leg++) {
     for (int joint = 0; joint < 3; joint++) {
-      setServo(legChannels[leg][joint], poseAngles[1][leg][joint]); // 1=Standing
+      setServo(legChannels[leg][joint],
+               poseAngles[1][leg][joint]); // 1=Standing
       delay(10); // stagger servo starts to reduce current spike
     }
   }
@@ -1200,11 +1203,13 @@ void moveToPose(int id, int speedMs) {
     for (int joint = 0; joint < 3; joint++) {
       uint8_t ch = legChannels[leg][joint];
       int diff = abs(poseAngles[id][leg][joint] - servoAngles[ch]);
-      if (diff > maxDiff) maxDiff = diff;
+      if (diff > maxDiff)
+        maxDiff = diff;
     }
   }
 
-  if (maxDiff == 0) return; // already at target, nothing to do
+  if (maxDiff == 0)
+    return; // already at target, nothing to do
 
   // Snapshot start angles before we begin moving
   int startAngles[16];
@@ -1214,36 +1219,40 @@ void moveToPose(int id, int speedMs) {
   // Each step moves every servo proportionally toward its target
   unsigned long moveStart = millis();
   for (int step = 1; step <= maxDiff; step++) {
-    float t = (float)step / (float)maxDiff;  // 0.0 -> 1.0
+    float t = (float)step / (float)maxDiff; // 0.0 -> 1.0
 
     for (int leg = 0; leg < 4; leg++) {
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
-        int angle = startAngles[ch] + (int)roundf(t * (poseAngles[id][leg][joint] - startAngles[ch]));
+        int angle =
+            startAngles[ch] +
+            (int)roundf(t * (poseAngles[id][leg][joint] - startAngles[ch]));
         setServo(ch, angle);
       }
     }
 
     // Precise timing: hold until this step's time slot
-    unsigned long stepTarget = moveStart + (unsigned long)((long)speedMs * step / maxDiff);
+    unsigned long stepTarget =
+        moveStart + (unsigned long)((long)speedMs * step / maxDiff);
     unsigned long now = millis();
-    if (stepTarget > now) delay(stepTarget - now);
+    if (stepTarget > now)
+      delay(stepTarget - now);
     yield(); // keep WiFi background task alive
   }
 
-  Serial.printf("[POSE] Transition done. Steps=%d, duration=%lums\n",
-                maxDiff, millis() - moveStart);
+  Serial.printf("[POSE] Transition done. Steps=%d, duration=%lums\n", maxDiff,
+                millis() - moveStart);
 }
 
 // =============================================================================
 // FORWARD KINEMATICS
 // =============================================================================
 Vec3f computeFK(int hipDeg, int femurDeg, int tibiaDeg, int mirror) {
-  const float a1 = (hipDeg   - 90) * DEG_TO_RAD;
+  const float a1 = (hipDeg - 90) * DEG_TO_RAD;
   const float a2 = (femurDeg - 90) * DEG_TO_RAD;
   const float a3 = (tibiaDeg - 90) * DEG_TO_RAD;
   const float reach = L1_MM + L2_MM * cosf(a2) + L3_MM * cosf(a2 + a3);
-  const float z     = L2_MM * sinf(a2) + L3_MM * sinf(a2 + a3);
+  const float z = L2_MM * sinf(a2) + L3_MM * sinf(a2 + a3);
   Vec3f pos;
   pos.x = reach * cosf(a1);
   pos.y = reach * sinf(a1) * (float)mirror;
@@ -1254,25 +1263,30 @@ Vec3f computeFK(int hipDeg, int femurDeg, int tibiaDeg, int mirror) {
 // =============================================================================
 // INVERSE KINEMATICS
 // =============================================================================
-bool computeIK(float px, float py, float pz, int mirror,
-               int* hipOut, int* femurOut, int* tibiaOut) {
+bool computeIK(float px, float py, float pz, int mirror, int *hipOut,
+               int *femurOut, int *tibiaOut) {
   py *= (float)mirror;
-  const float a1     = atan2f(py, px);
-  const float rTotal = sqrtf(px*px + py*py);
-  const float r      = rTotal - L1_MM;
-  const float d      = sqrtf(r*r + pz*pz);
-  const float maxR   = L2_MM + L3_MM;
-  const float minR   = fabsf(L2_MM - L3_MM);
-  if (d > maxR - 0.5f || d < minR + 0.5f) return false;
-  float cosA3 = (d*d - L2_MM*L2_MM - L3_MM*L3_MM) / (2.0f * L2_MM * L3_MM);
+  const float a1 = atan2f(py, px);
+  const float rTotal = sqrtf(px * px + py * py);
+  const float r = rTotal - L1_MM;
+  const float d = sqrtf(r * r + pz * pz);
+  const float maxR = L2_MM + L3_MM;
+  const float minR = fabsf(L2_MM - L3_MM);
+  if (d > maxR - 0.5f || d < minR + 0.5f)
+    return false;
+  float cosA3 =
+      (d * d - L2_MM * L2_MM - L3_MM * L3_MM) / (2.0f * L2_MM * L3_MM);
   cosA3 = constrain(cosA3, -1.0f, 1.0f);
   const float a3 = acosf(cosA3);
-  const float a2 = atan2f(pz, r) - atan2f(L3_MM * sinf(a3), L2_MM + L3_MM * cosf(a3));
-  int hip   = (int)roundf(a1 * RAD_TO_DEG) + 90;
+  const float a2 =
+      atan2f(pz, r) - atan2f(L3_MM * sinf(a3), L2_MM + L3_MM * cosf(a3));
+  int hip = (int)roundf(a1 * RAD_TO_DEG) + 90;
   int femur = (int)roundf(a2 * RAD_TO_DEG) + 90;
   int tibia = (int)roundf(a3 * RAD_TO_DEG) + 90;
-  if (hip < 0 || hip > 180 || femur < 0 || femur > 180 || tibia < 0 || tibia > 180) return false;
-  *hipOut   = hip;
+  if (hip < 0 || hip > 180 || femur < 0 || femur > 180 || tibia < 0 ||
+      tibia > 180)
+    return false;
+  *hipOut = hip;
   *femurOut = femur;
   *tibiaOut = tibia;
   return true;
@@ -1292,7 +1306,8 @@ void i2cScan() {
       found++;
     }
   }
-  if (found == 0) Serial.println("  [!!] No I2C devices found!");
+  if (found == 0)
+    Serial.println("  [!!] No I2C devices found!");
   Serial.printf("  Total: %d device(s)\n", found);
   Serial.println("-------------------------------------------------");
 }
@@ -1304,7 +1319,8 @@ String stateJSON() {
   String j = "{\"a\":[";
   for (int i = 0; i < 16; i++) {
     j += servoAngles[i];
-    if (i < 15) j += ',';
+    if (i < 15)
+      j += ',';
   }
   j += "]}";
   return j;
@@ -1312,31 +1328,29 @@ String stateJSON() {
 
 String legJSON(int leg) {
   String j = "{\"a\":[";
-  j += servoAngles[legChannels[leg][0]]; j += ',';
-  j += servoAngles[legChannels[leg][1]]; j += ',';
+  j += servoAngles[legChannels[leg][0]];
+  j += ',';
+  j += servoAngles[legChannels[leg][1]];
+  j += ',';
   j += servoAngles[legChannels[leg][2]];
   j += "]}";
   return j;
 }
 
-void addCORS(WebServer& s) {
-  s.sendHeader("Access-Control-Allow-Origin", "*");
-}
+void addCORS(WebServer &s) { s.sendHeader("Access-Control-Allow-Origin", "*"); }
 
 // =============================================================================
 // HTTP HANDLERS
 // =============================================================================
 
-void hRoot() {
-  server.send(200, "text/html", INDEX_HTML);
-}
+void hRoot() { server.send(200, "text/html", INDEX_HTML); }
 
 void hSet() {
   if (!server.hasArg("ch") || !server.hasArg("angle")) {
     server.send(400, "application/json", "{\"error\":\"missing ch or angle\"}");
     return;
   }
-  int ch    = server.arg("ch").toInt();
+  int ch = server.arg("ch").toInt();
   int angle = server.arg("angle").toInt();
   if (ch < 0 || ch > 15 || angle < 0 || angle > 180) {
     server.send(400, "application/json", "{\"error\":\"out of range\"}");
@@ -1345,7 +1359,10 @@ void hSet() {
   setServo((uint8_t)ch, angle);
   addCORS(server);
   String resp = "{\"ok\":true,\"ch\":";
-  resp += ch; resp += ",\"angle\":"; resp += angle; resp += "}";
+  resp += ch;
+  resp += ",\"angle\":";
+  resp += angle;
+  resp += "}";
   server.send(200, "application/json", resp);
 }
 
@@ -1383,15 +1400,15 @@ void hLegHome() {
 }
 
 void hIK() {
-  if (!server.hasArg("leg") || !server.hasArg("x") ||
-      !server.hasArg("y")   || !server.hasArg("z")) {
+  if (!server.hasArg("leg") || !server.hasArg("x") || !server.hasArg("y") ||
+      !server.hasArg("z")) {
     server.send(400, "application/json", "{\"error\":\"missing args\"}");
     return;
   }
-  int   leg = server.arg("leg").toInt();
-  float px  = server.arg("x").toFloat();
-  float py  = server.arg("y").toFloat();
-  float pz  = server.arg("z").toFloat();
+  int leg = server.arg("leg").toInt();
+  float px = server.arg("x").toFloat();
+  float py = server.arg("y").toFloat();
+  float pz = server.arg("z").toFloat();
   if (leg < 0 || leg > 3) {
     server.send(400, "application/json", "{\"error\":\"invalid leg\"}");
     return;
@@ -1400,7 +1417,8 @@ void hIK() {
   bool ok = computeIK(px, py, pz, legMirror[leg], &hip, &femur, &tibia);
   if (!ok) {
     addCORS(server);
-    server.send(200, "application/json", "{\"ok\":false,\"error\":\"unreachable\"}");
+    server.send(200, "application/json",
+                "{\"ok\":false,\"error\":\"unreachable\"}");
     return;
   }
   setServo(legChannels[leg][0], hip);
@@ -1408,8 +1426,12 @@ void hIK() {
   setServo(legChannels[leg][2], tibia);
   addCORS(server);
   String resp = "{\"ok\":true,\"hip\":";
-  resp += hip; resp += ",\"femur\":"; resp += femur;
-  resp += ",\"tibia\":"; resp += tibia; resp += "}";
+  resp += hip;
+  resp += ",\"femur\":";
+  resp += femur;
+  resp += ",\"tibia\":";
+  resp += tibia;
+  resp += "}";
   server.send(200, "application/json", resp);
   Serial.printf("[IK] Leg %d -> H:%d F:%d T:%d\n", leg, hip, femur, tibia);
 }
@@ -1425,18 +1447,20 @@ void hPose() {
   }
   int id = server.arg("id").toInt();
   if (id < 0 || id >= POSE_COUNT) {
-    server.send(400, "application/json", "{\"error\":\"invalid pose id (0-8)\"}");
+    server.send(400, "application/json",
+                "{\"error\":\"invalid pose id (0-8)\"}");
     return;
   }
 
-  const char* poseNames[13] = {
-    "Initial", "Standing", "LowCrouch", "LowStand",
-    "FL_Up", "FR_Up", "Trot_A", "Trot_B", "Stretch",
-    "WalkA_Basic", "WalkB_Basic", "WalkA_Enhanced", "WalkB_Enhanced"
-  };
+  const char *poseNames[13] = {"Initial",       "Standing",    "LowCrouch",
+                               "LowStand",      "FL_Up",       "FR_Up",
+                               "Trot_A",        "Trot_B",      "Stretch",
+                               "WalkA_Basic",   "WalkB_Basic", "WalkA_Enhanced",
+                               "WalkB_Enhanced"};
 
   // ── STEP 1: Build JSON with TARGET angles from pose table ──
-  // Build using poseAngles[id] so client gets correct target positions immediately
+  // Build using poseAngles[id] so client gets correct target positions
+  // immediately
   int targetAngles[16];
   memcpy(targetAngles, servoAngles, sizeof(servoAngles)); // start from current
   for (int leg = 0; leg < 4; leg++) {
@@ -1447,17 +1471,21 @@ void hPose() {
   String respJson = "{\"a\":[";
   for (int i = 0; i < 16; i++) {
     respJson += targetAngles[i];
-    if (i < 15) respJson += ',';
+    if (i < 15)
+      respJson += ',';
   }
   respJson += "]}";
 
   // ── STEP 2: Send HTTP response IMMEDIATELY — browser is unblocked ──
   addCORS(server);
   server.send(200, "application/json", respJson);
-  Serial.printf("[POSE] -> %s (%d) — response sent, moving servos now\n", poseNames[id], id);
+  Serial.printf("[POSE] -> %s (%d) — response sent, moving servos now\n",
+                poseNames[id], id);
 
   // ── STEP 3: Smooth interpolated move AFTER response — WiFi stays alive ──
-  int speedMs = server.hasArg("speed") ? constrain(server.arg("speed").toInt(), 0, 5000) : 0;
+  int speedMs = server.hasArg("speed")
+                    ? constrain(server.arg("speed").toInt(), 0, 5000)
+                    : 0;
   moveToPose(id, speedMs);
   Serial.printf("[POSE] -> %s done.\n", poseNames[id]);
 }
@@ -1495,10 +1523,10 @@ void hSavePose() {
 // =============================================================================
 // WALK FORWARD — State globals
 // =============================================================================
-volatile bool walkRunning    = false;
-volatile bool walkStop       = false;
-int           walkStepsTarget = 0;
-int           walkStepsDone   = 0;
+volatile bool walkRunning = false;
+volatile bool walkStop = false;
+int walkStepsTarget = 0;
+int walkStepsDone = 0;
 
 // =============================================================================
 // WALK FORWARD — Diagonal trot gait loop
@@ -1510,20 +1538,22 @@ int           walkStepsDone   = 0;
 //            stays alive during the potentially long blocking gait loop.
 // =============================================================================
 void walkForward(int steps, int speedMs, int variant) {
-  int phaseA = (variant == 0) ? 9  : 11;  // FL+BR swing up
-  int phaseB = (variant == 0) ? 10 : 12;  // FR+BL swing up (FL+BR put down)
+  int phaseA = (variant == 0) ? 9 : 11;  // FL+BR swing up
+  int phaseB = (variant == 0) ? 10 : 12; // FR+BL swing up (FL+BR put down)
 
-  walkRunning   = true;
-  walkStop      = false;
+  walkRunning = true;
+  walkStop = false;
   walkStepsDone = 0;
 
   int totalCycles = (steps == 0) ? INT_MAX : steps;
   for (int i = 0; i < totalCycles && !walkStop; i++) {
-    moveToPose(phaseA, speedMs);   // Phase A: FL+BR swing up
-    if (walkStop) break;
+    moveToPose(phaseA, speedMs); // Phase A: FL+BR swing up
+    if (walkStop)
+      break;
     yield();
-    moveToPose(phaseB, speedMs);   // Phase B: FR+BL swing up, FL+BR put down
-    if (walkStop) break;
+    moveToPose(phaseB, speedMs); // Phase B: FR+BL swing up, FL+BR put down
+    if (walkStop)
+      break;
     yield();
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
@@ -1533,8 +1563,8 @@ void walkForward(int steps, int speedMs, int variant) {
   // Always return to standing pose at end / stop
   moveToPose(1, 500);
   walkRunning = false;
-  Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n",
-                walkStepsDone, variant==0?"Basic":"Enhanced");
+  Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
+                variant == 0 ? "Basic" : "Enhanced");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1552,21 +1582,27 @@ void hWalk() {
 
   if (walkRunning) {
     addCORS(server);
-    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"already walking\"}");
+    server.send(200, "application/json",
+                "{\"ok\":false,\"msg\":\"already walking\"}");
     return;
   }
 
-  int steps   = server.hasArg("steps")   ? server.arg("steps").toInt()                       : 4;
-  int speed   = server.hasArg("speed")   ? constrain(server.arg("speed").toInt(), 100, 3000) : 600;
-  int variant = server.hasArg("variant") ? constrain(server.arg("variant").toInt(), 0, 1)   : 0;
+  int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
+  int speed = server.hasArg("speed")
+                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  : 600;
+  int variant = server.hasArg("variant")
+                    ? constrain(server.arg("variant").toInt(), 0, 1)
+                    : 0;
   walkStepsTarget = (steps < 0) ? 0 : steps;
 
-  Serial.printf("[WALK] Requested: steps=%d speed=%dms variant=%s\n",
-                steps, speed, variant==0?"Basic":"Enhanced");
+  Serial.printf("[WALK] Requested: steps=%d speed=%dms variant=%s\n", steps,
+                speed, variant == 0 ? "Basic" : "Enhanced");
 
   // ── Send HTTP 200 IMMEDIATELY so browser is unblocked ──
   addCORS(server);
-  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"walk started\"}");
+  server.send(200, "application/json",
+              "{\"ok\":true,\"msg\":\"walk started\"}");
 
   // ── Run walk loop AFTER response is sent ──
   walkForward(walkStepsTarget, speed, variant);
@@ -1591,7 +1627,8 @@ void hWalkStatus() {
 void hSweep() {
   sweepRequested = true;
   addCORS(server);
-  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"sweep started\"}");
+  server.send(200, "application/json",
+              "{\"ok\":true,\"msg\":\"sweep started\"}");
 }
 
 // =============================================================================
@@ -1600,7 +1637,8 @@ void hSweep() {
 void setup() {
   Serial.begin(115200);
   uint32_t t0 = millis();
-  while (!Serial && (millis() - t0) < 3000) delay(10);
+  while (!Serial && (millis() - t0) < 3000)
+    delay(10);
 
   Serial.println();
   Serial.println("=============================================");
@@ -1633,22 +1671,25 @@ void setup() {
   IPAddress apIP = WiFi.softAPIP();
 
   Serial.println("  WiFi AP started.");
-  Serial.print("  SSID    : "); Serial.println(AP_SSID);
-  Serial.print("  Password: "); Serial.println(AP_PASS);
-  Serial.print("  URL     : http://"); Serial.println(apIP);
+  Serial.print("  SSID    : ");
+  Serial.println(AP_SSID);
+  Serial.print("  Password: ");
+  Serial.println(AP_PASS);
+  Serial.print("  URL     : http://");
+  Serial.println(apIP);
 
   // ── HTTP Routes ──
-  server.on("/",        hRoot);
-  server.on("/set",     hSet);
-  server.on("/state",   hState);
-  server.on("/home",    hHome);
+  server.on("/", hRoot);
+  server.on("/set", hSet);
+  server.on("/state", hState);
+  server.on("/home", hHome);
   server.on("/leghome", hLegHome);
-  server.on("/ik",      hIK);
-  server.on("/pose",    hPose);    // ← NEW: pose preset endpoint
-  server.on("/savepose",   hSavePose);    // ← save pose to RAM
-  server.on("/walk",       hWalk);        // ← NEW: walk forward gait
-  server.on("/walkstatus", hWalkStatus);  // ← NEW: walk status poll
-  server.on("/sweep",      hSweep);
+  server.on("/ik", hIK);
+  server.on("/pose", hPose);             // ← NEW: pose preset endpoint
+  server.on("/savepose", hSavePose);     // ← save pose to RAM
+  server.on("/walk", hWalk);             // ← NEW: walk forward gait
+  server.on("/walkstatus", hWalkStatus); // ← NEW: walk status poll
+  server.on("/sweep", hSweep);
   server.begin();
 
   Serial.println("  HTTP server running on port 80.");
