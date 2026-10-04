@@ -159,34 +159,31 @@ int poseAngles[13][4][3] = {
     // Pose 8: STRETCH — full horizontal reach (workspace test)
     {{45, 90, 90}, {94, 90, 90}, {94, 90, 90}, {45, 90, 90}},
 
-    // ─── WALK FORWARD POSES
-    // ───────────────────────────────────────────────────
-    // Diagonal trot gait: Phase A = FL+BR swing, Phase B = FR+BL swing
-    // VARIANT 1 — BASIC: your hip/femur values, tibia kept at standing angles
+    // ─── WALK FORWARD POSES ────────────────────────────────────────────────
+    // 3-phase gait: Phase A (FL+BR lift) → Phase B (FL+BR push + FR+BL lift) → Stand
+    // VARIANT 1 — BASIC: tibia kept at standing angles
     //
-    // Pose 9: WALK A — BASIC (FL+BR lifted)
-    //   FL: Hip=60  Fem=35  Tib=115(keep)   FR: Hip=94  Fem=135 Tib=45(keep)
-    //   BL: Hip=94  Fem=111 Tib=55(keep)    BR: Hip=60  Fem=47  Tib=115(keep)
-    {{15, 35, 115}, {94, 135, 45}, {94, 111, 55}, {75, 47, 115}},
+    // Pose 9: WALK A — BASIC (FL+BR lift up, hips swing out)
+    //   FL: Hip=15  Fem=45  Tib=115   FR: Hip=94  Fem=135 Tib=45 (standing)
+    //   BL: Hip=94  Fem=111 Tib=55 (standing)   BR: Hip=75  Fem=57  Tib=115
+    {{15, 45, 115}, {94, 135, 45}, {94, 111, 55}, {75, 57, 115}},
 
-    // Pose 10: WALK B — BASIC (FR+BL lifted, FL+BR put down)
-    //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=45(keep)
-    //   BL: Hip=104 Fem=101 Tib=55(keep)    BR: Hip=45  Fem=37  Tib=115(stand)
-    {{45, 25, 115}, {124, 125, 45}, {64, 101, 55}, {45, 37, 115}},
+    // Pose 10: WALK B — BASIC (FL+BR push down + FR+BL lift up)
+    //   FL: Hip=15  Fem=20  Tib=115   FR: Hip=124 Fem=115 Tib=45
+    //   BL: Hip=64  Fem=91  Tib=55    BR: Hip=75  Fem=32  Tib=115
+    {{15, 20, 115}, {124, 115, 45}, {64, 91, 55}, {75, 32, 115}},
 
-    // VARIANT 2 — ENHANCED: your hip/femur values + tibia retracted for ground
-    // clearance
+    // VARIANT 2 — ENHANCED: tibia retracted for ground clearance on lifted legs
     //
-    // Pose 11: WALK A — ENHANCED (FL+BR lifted, tibia retracts)
-    //   FL: Hip=60  Fem=35  Tib=130(retract) FR: Hip=94  Fem=135 Tib=45(keep)
-    //   BL: Hip=94  Fem=111 Tib=55(keep)     BR: Hip=60  Fem=47
-    //   Tib=130(retract)
-    {{15, 35, 130}, {94, 135, 45}, {94, 111, 55}, {75, 47, 130}},
+    // Pose 11: WALK A — ENHANCED (FL+BR lift, tibia retracts)
+    //   FL: Hip=15  Fem=45  Tib=130   FR: Hip=94  Fem=135 Tib=45 (standing)
+    //   BL: Hip=94  Fem=111 Tib=55 (standing)   BR: Hip=75  Fem=57  Tib=130
+    {{15, 45, 130}, {94, 135, 45}, {94, 111, 55}, {75, 57, 130}},
 
-    // Pose 12: WALK B — ENHANCED (FR+BL lifted, tibia retracts)
-    //   FL: Hip=45  Fem=25  Tib=115(stand)  FR: Hip=104 Fem=125 Tib=30(retract)
-    //   BL: Hip=104 Fem=101 Tib=30(retract)  BR: Hip=45  Fem=37  Tib=115(stand)
-    {{45, 25, 115}, {124, 125, 30}, {64, 101, 30}, {45, 37, 115}}};
+    // Pose 12: WALK B — ENHANCED (FL+BR push + FR+BL lift, tibia retracts)
+    //   FL: Hip=15  Fem=20  Tib=115   FR: Hip=124 Fem=115 Tib=30
+    //   BL: Hip=64  Fem=91  Tib=30    BR: Hip=75  Fem=32  Tib=115
+    {{15, 20, 115}, {124, 115, 30}, {64, 91, 30}, {75, 32, 115}}};
 
 #define POSE_COUNT 13
 
@@ -1183,12 +1180,12 @@ void setLegHome(int leg) {
 // Called AFTER HTTP response is sent so WiFi stays alive during movement.
 // speedMs=0 means instant jump (no interpolation)
 // =============================================================================
-void moveToPose(int id, int speedMs) {
+void moveToTarget(const int targetAngles[4][3], int speedMs) {
   if (speedMs <= 0) {
     // Instant: just jump to target
     for (int leg = 0; leg < 4; leg++) {
       for (int joint = 0; joint < 3; joint++) {
-        setServo(legChannels[leg][joint], poseAngles[id][leg][joint]);
+        setServo(legChannels[leg][joint], targetAngles[leg][joint]);
         delay(8);
       }
       yield();
@@ -1202,7 +1199,7 @@ void moveToPose(int id, int speedMs) {
   for (int leg = 0; leg < 4; leg++) {
     for (int joint = 0; joint < 3; joint++) {
       uint8_t ch = legChannels[leg][joint];
-      int diff = abs(poseAngles[id][leg][joint] - servoAngles[ch]);
+      int diff = abs(targetAngles[leg][joint] - servoAngles[ch]);
       if (diff > maxDiff)
         maxDiff = diff;
     }
@@ -1226,7 +1223,7 @@ void moveToPose(int id, int speedMs) {
         uint8_t ch = legChannels[leg][joint];
         int angle =
             startAngles[ch] +
-            (int)roundf(t * (poseAngles[id][leg][joint] - startAngles[ch]));
+            (int)roundf(t * (targetAngles[leg][joint] - startAngles[ch]));
         setServo(ch, angle);
       }
     }
@@ -1242,6 +1239,12 @@ void moveToPose(int id, int speedMs) {
 
   Serial.printf("[POSE] Transition done. Steps=%d, duration=%lums\n", maxDiff,
                 millis() - moveStart);
+}
+
+void moveToPose(int id, int speedMs) {
+  if (id < 0 || id >= POSE_COUNT)
+    return;
+  moveToTarget(poseAngles[id], speedMs);
 }
 
 // =============================================================================
@@ -1538,35 +1541,56 @@ int walkStepsDone = 0;
 //            stays alive during the potentially long blocking gait loop.
 // =============================================================================
 void walkForward(int steps, int speedMs, int variant) {
-  int phaseA = (variant == 0) ? 9 : 11;  // FL+BR swing up
-  int phaseB = (variant == 0) ? 10 : 12; // FR+BL swing up (FL+BR put down)
-
   walkRunning = true;
   walkStop = false;
   walkStepsDone = 0;
 
   int totalCycles = (steps == 0) ? INT_MAX : steps;
+  
+  // Base standing target
+  const int t_stand[4][3] = { {45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115} };
+
   for (int i = 0; i < totalCycles && !walkStop; i++) {
-    moveToPose(phaseA, speedMs); // Phase A: FL+BR swing up
-    if (walkStop)
-      break;
-    yield();
+    
+    // Step 1: FL and BR moving the femur from 25 to 45 and 37 to 57
+    const int t1[4][3] = { {45, 45, 115}, {94, 135, 45}, {94, 111, 55}, {45, 57, 115} };
+    moveToTarget(t1, speedMs);
+    if (walkStop) break; yield();
 
-    moveToPose(1, speedMs); // Stand: all legs down
-    if (walkStop)
-      break;
-    yield();
+    // Step 2: hips from 45 to 15 and 45 to 75
+    const int t2[4][3] = { {15, 45, 115}, {94, 135, 45}, {94, 111, 55}, {75, 57, 115} };
+    moveToTarget(t2, speedMs);
+    if (walkStop) break; yield();
 
-    moveToPose(phaseB, speedMs); // Phase B: FR+BL swing up
-    if (walkStop)
-      break;
-    yield();
+    // Step 3: femurs from 45 to 20 and 57 to 32
+    const int t3[4][3] = { {15, 20, 115}, {94, 135, 45}, {94, 111, 55}, {75, 32, 115} };
+    moveToTarget(t3, speedMs);
+    if (walkStop) break; yield();
 
-    moveToPose(1, speedMs); // Stand: all legs down
-    if (walkStop)
-      break;
-    yield();
+    // Step 4: hips return to first pos (45, 45) WHILE FR & BL femurs lift to 115 and 91
+    const int t4[4][3] = { {45, 20, 115}, {94, 115, 45}, {94, 91, 55}, {45, 32, 115} };
+    moveToTarget(t4, speedMs);
+    if (walkStop) break; yield();
 
+    // Step 5: FR & BL hips from 94 to 124 and 94 to 64
+    const int t5[4][3] = { {45, 20, 115}, {124, 115, 45}, {64, 91, 55}, {45, 32, 115} };
+    moveToTarget(t5, speedMs);
+    if (walkStop) break; yield();
+
+    // Step 6: FR & BL femurs from 115 to 130 and 91 to 116
+    const int t6[4][3] = { {45, 20, 115}, {124, 130, 45}, {64, 116, 55}, {45, 32, 115} };
+    moveToTarget(t6, speedMs);
+    if (walkStop) break; yield();
+
+    // Step 7: FR & BL hips return (user specified FR hip to 64, BL hip to 94)
+    const int t7[4][3] = { {45, 20, 115}, {64, 130, 45}, {94, 116, 55}, {45, 32, 115} };
+    moveToTarget(t7, speedMs);
+    if (walkStop) break; yield();
+
+    // Step 8: get all the motors to the standing position
+    moveToTarget(t_stand, speedMs);
+    if (walkStop) break; yield();
+    
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
                   (steps == 0) ? -1 : steps);
