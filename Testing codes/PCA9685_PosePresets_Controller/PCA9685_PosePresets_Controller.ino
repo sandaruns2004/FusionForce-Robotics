@@ -1552,44 +1552,34 @@ void walkForward(int steps, int speedMs, int variant) {
 
   for (int i = 0; i < totalCycles && !walkStop; i++) {
     
-    // Step 1: FL femur to 45, BR femur to 57
-    const int t1[4][3] = { {45, 45, 115}, {64, 130, 45}, {94, 116, 55}, {45, 57, 115} };
+    // Step 1: Push FR & BL hips to 94 WHILE FL & BR femurs lift to 45 and 57
+    const int t1[4][3] = { {45, 45, 115}, {94, 130, 45}, {94, 116, 55}, {45, 57, 115} };
     moveToTarget(t1, speedMs);
     if (walkStop) break; yield();
 
-    // Step 2: FL hip to 15, BR hip to 75
-    const int t2[4][3] = { {15, 45, 115}, {64, 130, 45}, {94, 116, 55}, {75, 57, 115} };
+    // Step 2: Swing FL & BR hips to 15 and 75
+    const int t2[4][3] = { {15, 45, 115}, {94, 130, 45}, {94, 116, 55}, {75, 57, 115} };
     moveToTarget(t2, speedMs);
     if (walkStop) break; yield();
 
-    // Step 3: FL femur to 20, BR femur to 32
-    const int t3[4][3] = { {15, 20, 115}, {64, 130, 45}, {94, 116, 55}, {75, 32, 115} };
+    // Step 3: Plant FL & BR femurs to 20 and 32
+    const int t3[4][3] = { {15, 20, 115}, {94, 130, 45}, {94, 116, 55}, {75, 32, 115} };
     moveToTarget(t3, speedMs);
     if (walkStop) break; yield();
 
-    // Step 4: FR femur to 115, BL femur to 91 (Separated to move exactly 2 motors)
-    const int t4[4][3] = { {15, 20, 115}, {64, 115, 45}, {94, 91, 55}, {75, 32, 115} };
+    // Step 4: Push FL & BR hips to 45 WHILE FR & BL femurs lift to 115 and 91
+    const int t4[4][3] = { {45, 20, 115}, {94, 115, 45}, {94, 91, 55}, {45, 32, 115} };
     moveToTarget(t4, speedMs);
     if (walkStop) break; yield();
 
-    // Step 5: FL hip to 45, BR hip to 45 (Separated to move exactly 2 motors)
-    const int t5[4][3] = { {45, 20, 115}, {64, 115, 45}, {94, 91, 55}, {45, 32, 115} };
+    // Step 5: Swing FR & BL hips to 124 and 64
+    const int t5[4][3] = { {45, 20, 115}, {124, 115, 45}, {64, 91, 55}, {45, 32, 115} };
     moveToTarget(t5, speedMs);
     if (walkStop) break; yield();
 
-    // Step 6: FR hip to 124, BL hip to 64
-    const int t6[4][3] = { {45, 20, 115}, {124, 115, 45}, {64, 91, 55}, {45, 32, 115} };
+    // Step 6: Plant FR & BL femurs to 130 and 116
+    const int t6[4][3] = { {45, 20, 115}, {124, 130, 45}, {64, 116, 55}, {45, 32, 115} };
     moveToTarget(t6, speedMs);
-    if (walkStop) break; yield();
-
-    // Step 7: FR femur to 130, BL femur to 116
-    const int t7[4][3] = { {45, 20, 115}, {124, 130, 45}, {64, 116, 55}, {45, 32, 115} };
-    moveToTarget(t7, speedMs);
-    if (walkStop) break; yield();
-
-    // Step 8: FR hip to 64, BL hip to 94 (As explicitly requested by user)
-    const int t8[4][3] = { {45, 20, 115}, {64, 130, 45}, {94, 116, 55}, {45, 32, 115} };
-    moveToTarget(t8, speedMs);
     if (walkStop) break; yield();
     
     walkStepsDone++;
