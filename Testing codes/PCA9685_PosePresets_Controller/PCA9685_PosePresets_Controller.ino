@@ -477,7 +477,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <div class="speed-row" style="margin-top:6px">
       <span>Fast</span>
       <input type="range" class="speed-sl" id="walkSpeedSl"
-             min="100" max="3000" value="600"
+             min="20" max="3000" value="600"
              oninput="updWalkSpeed()">
       <span>Slow</span>
     </div>
@@ -509,7 +509,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <div class="speed-row" style="margin-top:6px">
       <span>Fast</span>
       <input type="range" class="speed-sl" id="turnLSpeedSl"
-             min="100" max="3000" value="500"
+             min="20" max="3000" value="500"
              oninput="updTurnLSpeed()">
       <span>Slow</span>
     </div>
@@ -540,7 +540,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <div class="speed-row" style="margin-top:6px">
       <span>Fast</span>
       <input type="range" class="speed-sl" id="turnRSpeedSl"
-             min="100" max="3000" value="500"
+             min="20" max="3000" value="500"
              oninput="updTurnRSpeed()">
       <span>Slow</span>
     </div>
@@ -1803,7 +1803,7 @@ void hWalk() {
 
   int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
   int speed = server.hasArg("speed")
-                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  ? constrain(server.arg("speed").toInt(), 20, 3000)
                   : 600;
   int variant = server.hasArg("variant")
                     ? constrain(server.arg("variant").toInt(), 0, 1)
@@ -1855,7 +1855,7 @@ void hTurnLeft() {
   }
   int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
   int speed = server.hasArg("speed")
-                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  ? constrain(server.arg("speed").toInt(), 20, 3000)
                   : 500;
   turnStepsTarget = (steps < 1) ? 1 : steps;
   Serial.printf("[TURN-L] steps=%d speed=%dms\n", turnStepsTarget, speed);
@@ -1882,7 +1882,7 @@ void hTurnRight() {
   }
   int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
   int speed = server.hasArg("speed")
-                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  ? constrain(server.arg("speed").toInt(), 20, 3000)
                   : 500;
   turnStepsTarget = (steps < 1) ? 1 : steps;
   Serial.printf("[TURN-R] steps=%d speed=%dms\n", turnStepsTarget, speed);
