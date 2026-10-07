@@ -132,7 +132,7 @@ const int legMirror[4] = {1, -1, 1, -1};
 // ─────────────────────────────────────────────────────────────────────────────
 // Pose presets can be updated dynamically via the Web UI for calibration
 int poseAngles[13][4][3] = {
-    // Pose 0: INITIAL — original INIT_ values from PCA9685_12DOF_Controller
+    // Pose 0: INITIAL — default power-on position (used as HOME)
     {{45, 80, 160}, {94, 80, 0}, {94, 56, 10}, {45, 92, 160}},
 
     // Pose 1: STANDING
@@ -401,31 +401,22 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 
   <!-- Pose 0: Initial -->
   <div class="pose-item">
-    <button class="pose-btn" id="pb0" onclick="applyPose(0)">
+    <button class="pose-btn active" id="pb0" onclick="applyPose(0)">
       <span class="pose-icon">&#9881;&#65039;</span>
       <span class="pose-name">Initial</span>
-      <span class="pose-badge">REF</span>
+      <span class="pose-badge">HOME</span>
     </button>
     <button class="pose-save" onclick="savePose(0)" title="Save current sliders to Initial">&#128190;</button>
   </div>
 
   <!-- Pose 1: Standing -->
   <div class="pose-item">
-    <button class="pose-btn active" id="pb1" onclick="applyPose(1)">
+    <button class="pose-btn" id="pb1" onclick="applyPose(1)">
       <span class="pose-icon">🦾</span>
       <span class="pose-name">Standing</span>
-      <span class="pose-badge">HOME</span>
+      <span class="pose-badge">STD</span>
     </button>
     <button class="pose-save" onclick="savePose(1)" title="Save current sliders to Standing">&#128190;</button>
-  </div>
-
-  <!-- Pose 2: Low Crouch -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb2" onclick="applyPose(2)">
-      <span class="pose-icon">⬇️</span>
-      <span class="pose-name">Low Crouch</span>
-    </button>
-    <button class="pose-save" onclick="savePose(2)" title="Save current sliders to Low Crouch">&#128190;</button>
   </div>
 
   <!-- Pose 3: Low Stand -->
@@ -435,56 +426,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
       <span class="pose-name">Low Stand</span>
     </button>
     <button class="pose-save" onclick="savePose(3)" title="Save current sliders to Low Stand">&#128190;</button>
-  </div>
-
-  <!-- Pose 4: FL Leg Up -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb4" onclick="applyPose(4)">
-      <span class="pose-icon">↖️</span>
-      <span class="pose-name">FL Leg Up</span>
-      <span class="pose-badge">STEP</span>
-    </button>
-    <button class="pose-save" onclick="savePose(4)" title="Save current sliders to FL Leg Up">&#128190;</button>
-  </div>
-
-  <!-- Pose 5: FR Leg Up -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb5" onclick="applyPose(5)">
-      <span class="pose-icon">↗️</span>
-      <span class="pose-name">FR Leg Up</span>
-      <span class="pose-badge">STEP</span>
-    </button>
-    <button class="pose-save" onclick="savePose(5)" title="Save current sliders to FR Leg Up">&#128190;</button>
-  </div>
-
-  <!-- Pose 6: Trot A -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb6" onclick="applyPose(6)">
-      <span class="pose-icon">🔄</span>
-      <span class="pose-name">Trot A</span>
-      <span class="pose-badge">FL+BR</span>
-    </button>
-    <button class="pose-save" onclick="savePose(6)" title="Save current sliders to Trot A">&#128190;</button>
-  </div>
-
-  <!-- Pose 7: Trot B -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb7" onclick="applyPose(7)">
-      <span class="pose-icon">🔃</span>
-      <span class="pose-name">Trot B</span>
-      <span class="pose-badge">FR+BL</span>
-    </button>
-    <button class="pose-save" onclick="savePose(7)" title="Save current sliders to Trot B">&#128190;</button>
-  </div>
-
-  <!-- Pose 8: Stretch -->
-  <div class="pose-item">
-    <button class="pose-btn" id="pb8" onclick="applyPose(8)">
-      <span class="pose-icon">&#8596;&#65039;</span>
-      <span class="pose-name">Stretch</span>
-      <span class="pose-badge">TEST</span>
-    </button>
-    <button class="pose-save" onclick="savePose(8)" title="Save current sliders to Stretch">&#128190;</button>
   </div>
 
   <hr class="sb-div">
@@ -498,24 +439,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <div style="font-size:.6rem;color:#484f58;text-align:center">
       <span id="transitionVal">Instant (0ms)</span>
     </div>
-  </div>
-
-  <hr class="sb-div">
-  <div class="sb-label">Play Mode</div>
-
-  <!-- Play Trot -->
-  <div class="play-section">
-    <button class="play-btn stopped" id="playBtn" onclick="togglePlay()">&#9654; Play Trot</button>
-    <div class="play-phase" id="playPhase"></div>
-    <div class="speed-row">
-      <span>Fast</span>
-      <input type="range" class="speed-sl" id="speedSl" min="200" max="2000" value="700">
-      <span>Slow</span>
-    </div>
-    <div style="font-size:.6rem;color:#484f58;text-align:center">
-      <span id="speedVal">700</span>ms / step
-    </div>
-    <div class="step-count" id="stepCount"></div>
   </div>
 
   <hr class="sb-div">
@@ -563,6 +486,68 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     </div>
 
   </div><!-- end Walk Forward section -->
+
+  <hr class="sb-div">
+  <div class="sb-label">Turn Left</div>
+
+  <!-- ─── Turn Left Section ─── -->
+  <div class="play-section">
+    <!-- Step count input -->
+    <div class="walk-steps-row">
+      <span style="font-size:.63rem;color:#6e7681;flex:1">Steps</span>
+      <input type="number" id="turnLStepsIn" class="walk-steps-in" min="1" max="200" value="4">
+    </div>
+    <!-- Turn Left Play / Stop button -->
+    <button class="play-btn stopped" id="turnLBtn" onclick="toggleTurnLeft()">
+      &#8634; Turn Left
+    </button>
+    <!-- Live phase indicator -->
+    <div class="play-phase" id="turnLPhase"></div>
+    <!-- Live step counter -->
+    <div class="step-count" id="turnLStepCount"></div>
+    <!-- Turn speed slider -->
+    <div class="speed-row" style="margin-top:6px">
+      <span>Fast</span>
+      <input type="range" class="speed-sl" id="turnLSpeedSl"
+             min="100" max="3000" value="500"
+             oninput="updTurnLSpeed()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center">
+      <span id="turnLSpeedVal">500</span>ms / step
+    </div>
+  </div><!-- end Turn Left section -->
+
+  <hr class="sb-div">
+  <div class="sb-label">Turn Right</div>
+
+  <!-- ─── Turn Right Section ─── -->
+  <div class="play-section">
+    <!-- Step count input -->
+    <div class="walk-steps-row">
+      <span style="font-size:.63rem;color:#6e7681;flex:1">Steps</span>
+      <input type="number" id="turnRStepsIn" class="walk-steps-in" min="1" max="200" value="4">
+    </div>
+    <!-- Turn Right Play / Stop button -->
+    <button class="play-btn stopped" id="turnRBtn" onclick="toggleTurnRight()">
+      &#8635; Turn Right
+    </button>
+    <!-- Live phase indicator -->
+    <div class="play-phase" id="turnRPhase"></div>
+    <!-- Live step counter -->
+    <div class="step-count" id="turnRStepCount"></div>
+    <!-- Turn speed slider -->
+    <div class="speed-row" style="margin-top:6px">
+      <span>Fast</span>
+      <input type="range" class="speed-sl" id="turnRSpeedSl"
+             min="100" max="3000" value="500"
+             oninput="updTurnRSpeed()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center">
+      <span id="turnRSpeedVal">500</span>ms / step
+    </div>
+  </div><!-- end Turn Right section -->
 
   <hr class="sb-div">
   <div class="sb-label">Foot Positions</div>
@@ -684,15 +669,13 @@ const POSES=[
   { name:'Trot B',     icon:'🔃', angles:[[45,80,160],[94,55,20],[94,36,130],[45,92,160]] },
   { name:'Stretch',    icon:'↔️', angles:[[45,90,90],[94,90,90],[94,90,90],[45,90,90]] }
 ];
+// Visible poses in sidebar (only show Initial, Standing, Low Stand)
+const VISIBLE_POSES=[0,1,3];
 
 // Runtime state
 let A=new Array(16).fill(0);
 let dbt={};
 let activePose=0;
-let playMode=false;
-let playInterval=null;
-let playStep=0;
-let stepCount=0;
 let pollTimer=null;      // holds setInterval id so we can pause/resume
 let pollBusy=false;      // true while a pose/home command is in-flight
 
@@ -770,11 +753,14 @@ function getPoseSpeed(){
 
 // ── Apply Pose — sends /pose?id=N&speed=X, pauses poll while in flight ──
 async function applyPose(id){
+  // Only update buttons for visible poses
+  const visibleIds=[0,1,3];
   activePose=id;
 
-  // Update sidebar button styles
+  // Update sidebar button styles (only for visible buttons)
   for(let i=0;i<POSES.length;i++){
-    document.getElementById('pb'+i).classList.toggle('active',i===id);
+    const el=document.getElementById('pb'+i);
+    if(el) el.classList.toggle('active',i===id);
   }
 
   // Flash leg cards
@@ -867,51 +853,6 @@ async function savePose(id){
   resumePoll();
 }
 
-// ── Play Trot Mode ──
-function updateSpeedDisplay(){
-  const ms=parseInt(document.getElementById('speedSl').value);
-  document.getElementById('speedVal').textContent=ms;
-  if(playMode){
-    clearInterval(playInterval);
-    startTrotCycle(ms);
-  }
-}
-
-function startTrotCycle(ms){
-  playInterval=setInterval(async()=>{
-    playStep=(playStep+1)%2;
-    stepCount++;
-    const poseId=playStep===0?6:7; // 6=Trot A, 7=Trot B
-    document.getElementById('playPhase').textContent='Phase: '+(playStep===0?'FL+BR up':'FR+BL up');
-    document.getElementById('stepCount').textContent='Steps: '+stepCount;
-    await applyPose(poseId);
-  },ms);
-}
-
-function togglePlay(){
-  playMode=!playMode;
-  const btn=document.getElementById('playBtn');
-  if(playMode){
-    btn.className='play-btn playing';
-    btn.innerHTML='&#9646;&#9646; Stop Trot';
-    playStep=0; stepCount=0;
-    const ms=parseInt(document.getElementById('speedSl').value);
-    applyPose(4);
-    document.getElementById('playPhase').textContent='Phase: FL+BR up';
-    document.getElementById('stepCount').textContent='Steps: 0';
-    startTrotCycle(ms);
-    lg('Play Trot started \u2014 '+ms+'ms/step','inf');
-  }else{
-    btn.className='play-btn stopped';
-    btn.innerHTML='&#9654; Play Trot';
-    clearInterval(playInterval); playInterval=null;
-    document.getElementById('playPhase').textContent='';
-    document.getElementById('stepCount').textContent='';
-    applyPose(0);
-    lg('Trot stopped \u2192 Standing','inf');
-  }
-}
-
 // ── Walk Forward ──
 let walkRunning   = false;
 let walkVariant   = 0;   // 0=Basic (poses 9+10), 1=Enhanced (poses 11+12)
@@ -987,6 +928,122 @@ function stopWalkUI(msg){
   document.getElementById('walkPhase').textContent=msg||'';
   document.getElementById('walkStepCount').textContent='';
   lg('Walk Forward \u2014 '+(msg||'stopped'),'ok2');
+}
+
+// ── Turn Left ──
+let turnLRunning=false;
+let turnLPollTimer=null;
+
+function updTurnLSpeed(){
+  document.getElementById('turnLSpeedVal').textContent=
+    document.getElementById('turnLSpeedSl').value;
+}
+
+async function toggleTurnLeft(){
+  if(turnLRunning){
+    try{await fetchWT('/turnleft?stop=1',3000);}catch(e){}
+    stopTurnLUI('Stopped.');
+    return;
+  }
+  const steps=parseInt(document.getElementById('turnLStepsIn').value)||4;
+  const speed=parseInt(document.getElementById('turnLSpeedSl').value);
+  const btn=document.getElementById('turnLBtn');
+  btn.className='play-btn playing';
+  btn.innerHTML='\u23f9 Stop Turn';
+  turnLRunning=true;
+  document.getElementById('turnLPhase').textContent='Starting\u2026';
+  document.getElementById('turnLStepCount').textContent='';
+  try{
+    await fetchWT('/turnleft?steps='+steps+'&speed='+speed, 8000);
+    document.getElementById('turnLPhase').textContent='Turning Left\u2026';
+    document.getElementById('turnLStepCount').textContent='Steps: 0 / '+steps;
+    turnLPollTimer=setInterval(pollTurnLStatus,400);
+    lg('Turn Left started \u2014 '+steps+' steps @ '+speed+'ms/step','inf');
+  }catch(e){
+    turnLRunning=false;
+    btn.className='play-btn stopped';
+    btn.innerHTML='\u21ba Turn Left';
+    lg('Turn Left command failed \u2014 check WiFi','er2');
+  }
+}
+
+async function pollTurnLStatus(){
+  try{
+    const r=await fetchWT('/turnstatus?dir=left',2000);
+    const d=await r.json();
+    document.getElementById('turnLPhase').textContent='Phase: '+d.phase;
+    document.getElementById('turnLStepCount').textContent='Steps: '+d.steps+' / '+d.target;
+    if(!d.running) stopTurnLUI('Turn Left complete \u2713');
+  }catch(e){}
+}
+
+function stopTurnLUI(msg){
+  turnLRunning=false;
+  clearInterval(turnLPollTimer);turnLPollTimer=null;
+  const btn=document.getElementById('turnLBtn');
+  btn.className='play-btn stopped';
+  btn.innerHTML='\u21ba Turn Left';
+  document.getElementById('turnLPhase').textContent=msg||'';
+  document.getElementById('turnLStepCount').textContent='';
+  lg('Turn Left \u2014 '+(msg||'stopped'),'ok2');
+}
+
+// ── Turn Right ──
+let turnRRunning=false;
+let turnRPollTimer=null;
+
+function updTurnRSpeed(){
+  document.getElementById('turnRSpeedVal').textContent=
+    document.getElementById('turnRSpeedSl').value;
+}
+
+async function toggleTurnRight(){
+  if(turnRRunning){
+    try{await fetchWT('/turnright?stop=1',3000);}catch(e){}
+    stopTurnRUI('Stopped.');
+    return;
+  }
+  const steps=parseInt(document.getElementById('turnRStepsIn').value)||4;
+  const speed=parseInt(document.getElementById('turnRSpeedSl').value);
+  const btn=document.getElementById('turnRBtn');
+  btn.className='play-btn playing';
+  btn.innerHTML='\u23f9 Stop Turn';
+  turnRRunning=true;
+  document.getElementById('turnRPhase').textContent='Starting\u2026';
+  document.getElementById('turnRStepCount').textContent='';
+  try{
+    await fetchWT('/turnright?steps='+steps+'&speed='+speed, 8000);
+    document.getElementById('turnRPhase').textContent='Turning Right\u2026';
+    document.getElementById('turnRStepCount').textContent='Steps: 0 / '+steps;
+    turnRPollTimer=setInterval(pollTurnRStatus,400);
+    lg('Turn Right started \u2014 '+steps+' steps @ '+speed+'ms/step','inf');
+  }catch(e){
+    turnRRunning=false;
+    btn.className='play-btn stopped';
+    btn.innerHTML='\u21bb Turn Right';
+    lg('Turn Right command failed \u2014 check WiFi','er2');
+  }
+}
+
+async function pollTurnRStatus(){
+  try{
+    const r=await fetchWT('/turnstatus?dir=right',2000);
+    const d=await r.json();
+    document.getElementById('turnRPhase').textContent='Phase: '+d.phase;
+    document.getElementById('turnRStepCount').textContent='Steps: '+d.steps+' / '+d.target;
+    if(!d.running) stopTurnRUI('Turn Right complete \u2713');
+  }catch(e){}
+}
+
+function stopTurnRUI(msg){
+  turnRRunning=false;
+  clearInterval(turnRPollTimer);turnRPollTimer=null;
+  const btn=document.getElementById('turnRBtn');
+  btn.className='play-btn stopped';
+  btn.innerHTML='\u21bb Turn Right';
+  document.getElementById('turnRPhase').textContent=msg||'';
+  document.getElementById('turnRStepCount').textContent='';
+  lg('Turn Right \u2014 '+(msg||'stopped'),'ok2');
 }
 
 // ── Forward Kinematics ──
@@ -1088,7 +1145,7 @@ async function allHome(){
       if(el){el.value=d.a[i];document.getElementById('v'+i).textContent=d.a[i]+'\u00b0';}
     }
     updAllFK();
-    for(let i=0;i<POSES.length;i++) document.getElementById('pb'+i).classList.toggle('active',i===0);
+    for(let i=0;i<POSES.length;i++){const el=document.getElementById('pb'+i);if(el)el.classList.toggle('active',i===0);}
     activePose=0;
     cst(true);
     lg('All 12 servos \u2192 HOME (Standing)','ok2');
@@ -1123,15 +1180,12 @@ async function poll(){
   }catch(e){cst(false);}
 }
 
-// ── Speed slider live update ──
-document.getElementById('speedSl').addEventListener('input', updateSpeedDisplay);
-
 // ── Init ──
 window.onload=function(){
   updAllFK();
   poll();
   pollTimer=setInterval(poll, 3000);  // 3s poll — less aggressive, avoids collision
-  lg('RUNNER4 v3.0 — L1='+L1+' L2='+L2+' L3='+L3+' mm  |  8 Pose Presets + Play Trot','inf');
+  lg('RUNNER4 v3.0 — L1='+L1+' L2='+L2+' L3='+L3+' mm  |  Pose Presets + Walk + Turn','inf');
   lg('Tip: if motors not moving, check WiFi connection (status top-right)','inf');
 };
 </script>
@@ -1158,11 +1212,11 @@ void setServo(uint8_t ch, int angle) {
 }
 
 void setAllServosHome() {
-  Serial.println("[HOME] All 12 servos -> STANDING:");
+  Serial.println("[HOME] All 12 servos -> INITIAL pose:");
   for (int leg = 0; leg < 4; leg++) {
     for (int joint = 0; joint < 3; joint++) {
       setServo(legChannels[leg][joint],
-               poseAngles[1][leg][joint]); // 1=Standing
+               poseAngles[0][leg][joint]); // 0=Initial (default power-on)
       delay(10); // stagger servo starts to reduce current spike
     }
   }
@@ -1171,7 +1225,7 @@ void setAllServosHome() {
 
 void setLegHome(int leg) {
   for (int joint = 0; joint < 3; joint++) {
-    setServo(legChannels[leg][joint], poseAngles[1][leg][joint]); // 1=Standing
+    setServo(legChannels[leg][joint], poseAngles[0][leg][joint]); // 0=Initial
   }
 }
 
@@ -1524,12 +1578,20 @@ void hSavePose() {
 }
 
 // =============================================================================
-// WALK FORWARD — State globals
+// WALK / TURN — Shared state globals
 // =============================================================================
 volatile bool walkRunning = false;
-volatile bool walkStop = false;
+volatile bool walkStop   = false;
 int walkStepsTarget = 0;
-int walkStepsDone = 0;
+int walkStepsDone   = 0;
+
+// Turn state
+volatile bool turnRunning  = false;
+volatile bool turnStop     = false;
+int turnStepsTarget = 0;
+int turnStepsDone   = 0;
+char turnDirection[6] = "none"; // "left" or "right"
+char turnPhaseStr[32] = "";
 
 // =============================================================================
 // WALK FORWARD — Diagonal trot gait loop
@@ -1587,11 +1649,136 @@ void walkForward(int steps, int speedMs, int variant) {
                   (steps == 0) ? -1 : steps);
   }
 
-  // Always return to standing pose at end / stop
-  moveToPose(1, 500);
+  // Always return to Initial pose at end / stop
+  moveToPose(0, 500);
   walkRunning = false;
   Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
                 variant == 0 ? "Basic" : "Enhanced");
+}
+
+// =============================================================================
+// TURN LEFT — 4-sub-step gait loop per full step cycle
+//
+// Standing angles (reference):
+//   FL: Hip=45  Fem=25  Tib=115
+//   FR: Hip=94  Fem=135 Tib=45
+//   BL: Hip=94  Fem=111 Tib=55
+//   BR: Hip=45  Fem=37  Tib=115  (BR femur standing = 37, lift target = 57)
+//
+// Per-cycle sub-steps:
+//  A) FL femur 25→45 & BR femur 37→57 simultaneously (lift FL+BR)
+//  B) FL hip  45→65 & BR hip  45→65 simultaneously   (swing FL+BR out)
+//  C) FL femur 45→25 & BR femur 57→37 plant down;
+//     simultaneously FR femur 135→115 & BL femur 111→91 lift
+//  D) FR hip  94→114 & BL hip  94→114 simultaneously  (swing FR+BL out)
+//  E) FR femur 115→135 & BL femur 91→111 plant down;
+//     simultaneously FL femur 25→45 & BR femur 37→57 lift (start next cycle)
+//     (Cycle loops back to step A keeping the robot turning continuously)
+//
+// For Turn Right: hip changes are REVERSED (-20 instead of +20)
+// =============================================================================
+void turnGait(int steps, int speedMs, bool rightTurn) {
+  turnRunning   = true;
+  turnStop      = false;
+  turnStepsDone = 0;
+  strncpy(turnDirection, rightTurn ? "right" : "left", sizeof(turnDirection));
+
+  const int hipOffset = rightTurn ? -20 : 20; // +20 for left, -20 for right
+
+  // Standing base angles
+  const int FL_HIP_S=45, FL_FEM_S=25, FL_TIB=115;
+  const int FR_HIP_S=94, FR_FEM_S=135,FR_TIB=45;
+  const int BL_HIP_S=94, BL_FEM_S=111,BL_TIB=55;
+  const int BR_HIP_S=45, BR_FEM_S=37, BR_TIB=115;
+
+  // Lift targets
+  const int FL_FEM_UP=45, BR_FEM_UP=57;
+  const int FR_FEM_UP=115,BL_FEM_UP=91;
+
+  // Hip swing targets (standing + hipOffset)
+  const int FL_HIP_SW=FL_HIP_S+hipOffset; // 65 left / 25 right
+  const int BR_HIP_SW=BR_HIP_S+hipOffset; // 65 left / 25 right
+  const int FR_HIP_SW=FR_HIP_S+hipOffset; // 114 left / 74 right
+  const int BL_HIP_SW=BL_HIP_S+hipOffset; // 114 left / 74 right
+
+  for (int i = 0; i < steps && !turnStop; i++) {
+
+    // ── Sub-step A: Lift FL femur + BR femur simultaneously ──
+    strncpy(turnPhaseStr, "A: FL+BR lift", sizeof(turnPhaseStr));
+    {
+      const int t[4][3] = {
+        {FL_HIP_S,  FL_FEM_UP, FL_TIB},  // FL
+        {FR_HIP_S,  FR_FEM_S,  FR_TIB},  // FR (unchanged)
+        {BL_HIP_S,  BL_FEM_S,  BL_TIB},  // BL (unchanged)
+        {BR_HIP_S,  BR_FEM_UP, BR_TIB}   // BR
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (turnStop) break; yield();
+
+    // ── Sub-step B: Swing FL hip + BR hip out ──
+    strncpy(turnPhaseStr, "B: FL+BR swing", sizeof(turnPhaseStr));
+    {
+      const int t[4][3] = {
+        {FL_HIP_SW, FL_FEM_UP, FL_TIB},  // FL swing
+        {FR_HIP_S,  FR_FEM_S,  FR_TIB},  // FR (unchanged)
+        {BL_HIP_S,  BL_FEM_S,  BL_TIB},  // BL (unchanged)
+        {BR_HIP_SW, BR_FEM_UP, BR_TIB}   // BR swing
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (turnStop) break; yield();
+
+    // ── Sub-step C: Plant FL+BR AND simultaneously lift FR+BL ──
+    strncpy(turnPhaseStr, "C: FL+BR plant / FR+BL lift", sizeof(turnPhaseStr));
+    {
+      const int t[4][3] = {
+        {FL_HIP_SW, FL_FEM_S,  FL_TIB},  // FL plant (hip stays swung)
+        {FR_HIP_S,  FR_FEM_UP, FR_TIB},  // FR lift
+        {BL_HIP_S,  BL_FEM_UP, BL_TIB},  // BL lift
+        {BR_HIP_SW, BR_FEM_S,  BR_TIB}   // BR plant (hip stays swung)
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (turnStop) break; yield();
+
+    // ── Sub-step D: Swing FR hip + BL hip out ──
+    strncpy(turnPhaseStr, "D: FR+BL swing", sizeof(turnPhaseStr));
+    {
+      const int t[4][3] = {
+        {FL_HIP_SW, FL_FEM_S,  FL_TIB},  // FL (unchanged)
+        {FR_HIP_SW, FR_FEM_UP, FR_TIB},  // FR swing
+        {BL_HIP_SW, BL_FEM_UP, BL_TIB},  // BL swing
+        {BR_HIP_SW, BR_FEM_S,  BR_TIB}   // BR (unchanged)
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (turnStop) break; yield();
+
+    // ── Sub-step E: Plant FR+BL AND simultaneously lift FL+BR for next cycle ──
+    strncpy(turnPhaseStr, "E: FR+BL plant / FL+BR lift", sizeof(turnPhaseStr));
+    {
+      const int t[4][3] = {
+        {FL_HIP_S,  FL_FEM_UP, FL_TIB},  // FL lift (hip reset)
+        {FR_HIP_SW, FR_FEM_S,  FR_TIB},  // FR plant (hip stays swung)
+        {BL_HIP_SW, BL_FEM_S,  BL_TIB},  // BL plant (hip stays swung)
+        {BR_HIP_S,  BR_FEM_UP, BR_TIB}   // BR lift (hip reset)
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (turnStop) break; yield();
+
+    turnStepsDone++;
+    Serial.printf("[TURN] %s step %d/%d done\n",
+                  rightTurn ? "Right" : "Left", turnStepsDone, steps);
+  }
+
+  // Return to Initial pose
+  strncpy(turnPhaseStr, "done", sizeof(turnPhaseStr));
+  moveToPose(0, 500);
+  turnRunning = false;
+  Serial.printf("[TURN] %s complete. Steps=%d\n",
+                rightTurn ? "Right" : "Left", turnStepsDone);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1637,7 +1824,6 @@ void hWalk() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /walkstatus — returns current walk state for browser polling
-// Response: {"running":bool, "steps":N, "target":N}
 // ─────────────────────────────────────────────────────────────────────────────
 void hWalkStatus() {
   addCORS(server);
@@ -1648,6 +1834,77 @@ void hWalkStatus() {
   j += ",\"target\":";
   j += walkStepsTarget;
   j += "}";
+  server.send(200, "application/json", j);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /turnleft?steps=N&speed=X  — start turn left gait
+// GET /turnleft?stop=1           — stop turn
+// ─────────────────────────────────────────────────────────────────────────────
+void hTurnLeft() {
+  if (server.hasArg("stop")) {
+    turnStop = true;
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping\"}" );
+    return;
+  }
+  if (turnRunning) {
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"already turning\"}" );
+    return;
+  }
+  int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
+  int speed = server.hasArg("speed")
+                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  : 500;
+  turnStepsTarget = (steps < 1) ? 1 : steps;
+  Serial.printf("[TURN-L] steps=%d speed=%dms\n", turnStepsTarget, speed);
+  addCORS(server);
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"turn left started\"}" );
+  turnGait(turnStepsTarget, speed, false);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /turnright?steps=N&speed=X — start turn right gait
+// GET /turnright?stop=1          — stop turn
+// ─────────────────────────────────────────────────────────────────────────────
+void hTurnRight() {
+  if (server.hasArg("stop")) {
+    turnStop = true;
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping\"}" );
+    return;
+  }
+  if (turnRunning) {
+    addCORS(server);
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"already turning\"}" );
+    return;
+  }
+  int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
+  int speed = server.hasArg("speed")
+                  ? constrain(server.arg("speed").toInt(), 100, 3000)
+                  : 500;
+  turnStepsTarget = (steps < 1) ? 1 : steps;
+  Serial.printf("[TURN-R] steps=%d speed=%dms\n", turnStepsTarget, speed);
+  addCORS(server);
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"turn right started\"}" );
+  turnGait(turnStepsTarget, speed, true);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /turnstatus?dir=left|right — returns current turn state for browser poll
+// ─────────────────────────────────────────────────────────────────────────────
+void hTurnStatus() {
+  addCORS(server);
+  String j = "{\"running\":";
+  j += turnRunning ? "true" : "false";
+  j += ",\"steps\":";
+  j += turnStepsDone;
+  j += ",\"target\":";
+  j += turnStepsTarget;
+  j += ",\"phase\":\"";
+  j += turnPhaseStr;
+  j += "\"}";
   server.send(200, "application/json", j);
 }
 
@@ -1686,7 +1943,7 @@ void setup() {
   pwm.setPWMFreq(SERVO_FREQ);
   delay(10);
 
-  Serial.println("Moving all servos -> STANDING pose...");
+  Serial.println("Moving all servos -> INITIAL pose...");
   setAllServosHome();
   delay(1500);
 
@@ -1714,8 +1971,11 @@ void setup() {
   server.on("/ik", hIK);
   server.on("/pose", hPose);             // ← NEW: pose preset endpoint
   server.on("/savepose", hSavePose);     // ← save pose to RAM
-  server.on("/walk", hWalk);             // ← NEW: walk forward gait
-  server.on("/walkstatus", hWalkStatus); // ← NEW: walk status poll
+  server.on("/walk", hWalk);             // ← walk forward gait
+  server.on("/walkstatus", hWalkStatus); // ← walk status poll
+  server.on("/turnleft",   hTurnLeft);   // ← turn left gait
+  server.on("/turnright",  hTurnRight);  // ← turn right gait
+  server.on("/turnstatus", hTurnStatus); // ← turn status poll
   server.on("/sweep", hSweep);
   server.begin();
 
