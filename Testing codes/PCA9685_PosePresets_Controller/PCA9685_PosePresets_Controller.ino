@@ -1649,8 +1649,8 @@ void walkForward(int steps, int speedMs, int variant) {
                   (steps == 0) ? -1 : steps);
   }
 
-  // Always return to Initial pose at end / stop
-  moveToPose(0, 500);
+  // Always return to STANDING pose at end / stop
+  moveToPose(1, 500);
   walkRunning = false;
   Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
                 variant == 0 ? "Basic" : "Enhanced");
@@ -1773,9 +1773,9 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                   rightTurn ? "Right" : "Left", turnStepsDone, steps);
   }
 
-  // Return to Initial pose
+  // Return to STANDING pose
   strncpy(turnPhaseStr, "done", sizeof(turnPhaseStr));
-  moveToPose(0, 500);
+  moveToPose(1, 500);
   turnRunning = false;
   Serial.printf("[TURN] %s complete. Steps=%d\n",
                 rightTurn ? "Right" : "Left", turnStepsDone);
