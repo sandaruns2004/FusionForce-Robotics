@@ -59,11 +59,12 @@
 #include <Wire.h>
 #include <limits.h>
 #include <math.h>
-#include <esp_system.h>
+
 
 #include "color_sensor.h" // colour module API
 #include "line_sensor.h"  // line array module API
 #include "robot_page.h"   // INDEX_HTML
+
 
 struct Vec3f {
   float x, y, z;
@@ -144,27 +145,6 @@ int servoAngles[16] = {0};
 
 WebServer server(80);
 bool serverStarted = false;
-volatile uint32_t apClientConnects = 0;
-volatile uint32_t apClientDisconnects = 0;
-volatile uint32_t apStops = 0;
-esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
-
-// Wi-Fi events run on another task. Keep this callback short.
-void onWiFiEvent(WiFiEvent_t event) {
-  switch (event) {
-  case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
-    ++apClientConnects;
-    break;
-  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
-    ++apClientDisconnects;
-    break;
-  case ARDUINO_EVENT_WIFI_AP_STOP:
-    ++apStops;
-    break;
-  default:
-    break;
-  }
-}
 
 // =============================================================================
 // JOB SYSTEM — handlers queue work, loop() executes it
@@ -176,8 +156,7 @@ enum Job : uint8_t {
   JOB_POSE,
   JOB_WALK,
   JOB_TURN,
-  JOB_SWEEP,
-  JOB_CRAWL
+  JOB_SWEEP
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
@@ -186,17 +165,13 @@ bool jobRight = false;
 
 inline bool robotBusy() { return jobRunning || pendingJob != JOB_NONE; }
 
-// Walk / turn / crawl state
+// Walk / turn state
 volatile bool walkRunning = false, walkStop = false;
 int walkStepsTarget = 0, walkStepsDone = 0;
 volatile bool turnRunning = false, turnStop = false;
 int turnStepsTarget = 0, turnStepsDone = 0;
 char turnDirection[6] = "none";
 char turnPhaseStr[32] = "";
-// Crawl (wave gait) state
-volatile bool crawlRunning = false, crawlStop = false;
-int crawlStepsTarget = 0, crawlStepsDone = 0;
-char crawlPhaseStr[32] = "";
 
 // =============================================================================
 // BACKGROUND SERVICE — called from every wait inside motion code
@@ -277,10 +252,9 @@ void moveToTarget(const int targetAngles[4][3], int speedMs) {
     for (int leg = 0; leg < 4; leg++)
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
-        int nextAngle = startAngles[ch] +
-                        (int)roundf(t * (targetAngles[leg][joint] - startAngles[ch]));
-        if (nextAngle != servoAngles[ch])
-          setServo(ch, nextAngle);
+        setServo(ch, startAngles[ch] +
+                         (int)roundf(
+                             t * (targetAngles[leg][joint] - startAngles[ch])));
       }
     unsigned long stepTarget =
         moveStart + (unsigned long)((long)speedMs * step / maxDiff);
@@ -399,13 +373,6 @@ bool rejectIfBusy() {
 // =============================================================================
 // WALK / TURN GAITS (your sequences, unchanged)
 // =============================================================================
-// After each sub-step: dip to LOW STAND then rise to STANDING
-// speedMs = same speed used for that gait sub-step
-void stepDipRise(int speedMs) {
-  moveToPose(3, speedMs); // LOW STAND (pose 3)
-  moveToPose(1, speedMs); // STANDING   (pose 1)
-}
-
 void walkForward(int steps, int speedMs, int variant) {
   walkRunning = true;
   walkStop = false;
@@ -421,37 +388,34 @@ void walkForward(int steps, int speedMs, int variant) {
       break;
     // 2: swing FL&BR hips
     const int t2[4][3] = {
-        {25, 45, 115}, {94, 130, 45}, {94, 116, 55}, {65, 57, 115}};
+        {15, 45, 115}, {94, 130, 45}, {94, 116, 55}, {75, 57, 115}};
     moveToTarget(t2, speedMs);
     if (walkStop)
       break;
     // 3: plant FL&BR femurs
     const int t3[4][3] = {
-        {25, 25, 115}, {94, 130, 45}, {94, 116, 55}, {65, 37, 115}};
+        {15, 20, 115}, {94, 130, 45}, {94, 116, 55}, {75, 32, 115}};
     moveToTarget(t3, speedMs);
     if (walkStop)
       break;
     // 4: push FL&BR hips to 45 while FR&BL femurs lift
     const int t4[4][3] = {
-        {45, 25, 115}, {94, 115, 45}, {94, 91, 55}, {45, 37, 115}};
+        {45, 20, 115}, {94, 115, 45}, {94, 91, 55}, {45, 32, 115}};
     moveToTarget(t4, speedMs);
     if (walkStop)
       break;
     // 5: swing FR&BL hips
     const int t5[4][3] = {
-        {45, 25, 115}, {114, 115, 45}, {74, 91, 55}, {45, 37, 115}};
+        {45, 20, 115}, {124, 115, 45}, {64, 91, 55}, {45, 32, 115}};
     moveToTarget(t5, speedMs);
     if (walkStop)
       break;
     // 6: plant FR&BL femurs
     const int t6[4][3] = {
-        {45, 25, 115}, {114, 130, 45}, {74, 116, 55}, {45, 37, 115}};
+        {45, 20, 115}, {124, 130, 45}, {64, 116, 55}, {45, 32, 115}};
     moveToTarget(t6, speedMs);
-    if (walkStop) break;
-
-    // ── One full step done: dip to LOW STAND then rise to STANDING ──
-    stepDipRise(speedMs);
-    if (walkStop) break;
+    if (walkStop)
+      break;
 
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
@@ -531,11 +495,8 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_S, BR_FEM_UP, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop) break;
-
-    // ── One full turn step done: dip to LOW STAND then rise to STANDING ──
-    stepDipRise(speedMs);
-    if (turnStop) break;
+    if (turnStop)
+      break;
 
     turnStepsDone++;
     Serial.printf("[TURN] %s step %d/%d done\n", rightTurn ? "Right" : "Left",
@@ -564,13 +525,6 @@ void sweepTest() {
   Serial.println("[SWEEP] Done.");
 }
 
-// =============================================================================
-// CRAWL GAIT — one leg at a time (FL -> BR -> FR -> BL)
-// Code is modularized in the dedicated "crawl_gait.h" tab!
-// =============================================================================
-#include "crawl_gait.h"
-
-
 // Runs one queued job (called from loop only)
 void runPendingJob() {
   if (pendingJob == JOB_NONE)
@@ -595,9 +549,6 @@ void runPendingJob() {
     break;
   case JOB_TURN:
     turnGait(jobSteps, jobSpeed, jobRight);
-    break;
-  case JOB_CRAWL:
-    crawlForward(jobSteps, jobSpeed);
     break;
   case JOB_SWEEP:
     sweepTest();
@@ -635,25 +586,6 @@ void hSet() {
 void hState() {
   addCORS();
   server.send(200, "application/json", stateJSON());
-}
-
-// Use /health to distinguish a true AP disconnect or ESP32 reset from a
-// browser request that merely timed out.
-void hHealth() {
-  String json = "{\"uptime_ms\":" + String(millis());
-  json += ",\"reset_reason\":" + String((int)bootResetReason);
-  json += ",\"brownout_reset\":";
-  json += (bootResetReason == ESP_RST_BROWNOUT ? "true" : "false");
-  json += ",\"free_heap_bytes\":" + String(ESP.getFreeHeap());
-  json += ",\"ap_clients\":" + String(WiFi.softAPgetStationNum());
-  json += ",\"ap_connects\":" + String(apClientConnects);
-  json += ",\"ap_disconnects\":" + String(apClientDisconnects);
-  json += ",\"ap_stops\":" + String(apStops);
-  json += ",\"job_running\":";
-  json += (jobRunning ? "true" : "false");
-  json += "}";
-  server.sendHeader("Cache-Control", "no-store");
-  server.send(200, "application/json", json);
 }
 
 void hHome() {
@@ -860,10 +792,6 @@ void setup() {
   while (!Serial && (millis() - t0) < 3000)
     delay(10);
 
-  bootResetReason = esp_reset_reason();
-  Serial.printf("[BOOT] Reset reason: %d%s\n", (int)bootResetReason,
-                bootResetReason == ESP_RST_BROWNOUT ? " (BROWNOUT)" : "");
-
   Serial.println("\n=============================================");
   Serial.println("  FusionForce RUNNER4 v5.0 — ESP32-S3");
   Serial.println("  Robot (/)  +  Colour (/color)  +  Line (/line)");
@@ -886,19 +814,15 @@ void setup() {
   delay(1500);
 
   // WiFi AP
-  WiFi.mode(WIFI_AP);
-  WiFi.onEvent(onWiFiEvent);
-  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(AP_SSID, AP_PASS);
   WiFi.setSleep(false);
-  Serial.printf("[WIFI] AP %s: '%s' -> http://%s\n",
-                apStarted ? "started" : "FAILED", AP_SSID,
+  Serial.printf("WiFi AP '%s' / '%s'  ->  http://%s\n", AP_SSID, AP_PASS,
                 WiFi.softAPIP().toString().c_str());
 
   // Robot routes (root)
   server.on("/", hRoot);
   server.on("/set", hSet);
   server.on("/state", hState);
-  server.on("/health", hHealth);
   server.on("/home", hHome);
   server.on("/leghome", hLegHome);
   server.on("/ik", hIK);
@@ -909,7 +833,6 @@ void setup() {
   server.on("/turnleft", hTurnLeft);
   server.on("/turnright", hTurnRight);
   server.on("/turnstatus", hTurnStatus);
-  crawlRegisterRoutes(server);
   server.on("/sweep", hSweep);
 
   // Colour sensor module (separate root: /color, /color/...)
