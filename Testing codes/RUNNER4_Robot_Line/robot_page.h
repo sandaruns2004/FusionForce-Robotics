@@ -239,6 +239,31 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
   </div>
 
   <hr class="sb-div">
+  <div class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Crawl (1-Leg Gait)</span>
+    <span style="font-size:.5rem;background:rgba(63,185,80,.2);color:#3fb950;padding:1px 5px;border-radius:4px;font-weight:700">WAVE</span>
+  </div>
+  <div class="play-section">
+    <div style="font-size:.55rem;color:#3fb950;margin-bottom:6px;padding:0 2px">
+      Lifts 1 leg at a time (FL&rarr;BR&rarr;FR&rarr;BL) &mdash; max stability
+    </div>
+    <div class="walk-steps-row">
+      <span style="font-size:.63rem;color:#6e7681;flex:1">Cycles</span>
+      <input type="number" id="crawlStepsIn" class="walk-steps-in" min="0" max="200" value="4">
+      <span style="font-size:.6rem;color:#484f58">(0=&infin;)</span>
+    </div>
+    <button class="play-btn stopped" id="crawlBtn" onclick="toggleCrawl()">&#128034; Crawl Walk</button>
+    <div class="play-phase" id="crawlPhase"></div>
+    <div class="step-count" id="crawlStepCount"></div>
+    <div class="speed-row" style="margin-top:6px">
+      <span>Fast</span>
+      <input type="range" class="speed-sl" id="crawlSpeedSl" min="50" max="2000" value="300" oninput="updCrawlSpeed()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center"><span id="crawlSpeedVal">300</span>ms / sub-step</div>
+  </div>
+
+  <hr class="sb-div">
   <div class="sb-label">Foot Positions</div>
   <div class="fk-mini">
     <div class="fk-mini-title">Live FK (mm)</div>
@@ -648,6 +673,61 @@ function stopTurnRUI(msg){
   document.getElementById('turnRStepCount').textContent='';
   lg('Turn Right \u2014 '+(msg||'stopped'),'ok2');
 }
+
+let crawlRunning=false, crawlPollTimer=null;
+function updCrawlSpeed(){ document.getElementById('crawlSpeedVal').textContent=document.getElementById('crawlSpeedSl').value; }
+
+async function toggleCrawl(){
+  if(crawlRunning){
+    try{await fetchWT('/crawl?stop=1',3000);}catch(e){}
+    stopCrawlUI('Stopped.');
+    return;
+  }
+  const steps=parseInt(document.getElementById('crawlStepsIn').value)||0;
+  const speed=parseInt(document.getElementById('crawlSpeedSl').value);
+  const btn=document.getElementById('crawlBtn');
+  btn.className='play-btn playing';
+  btn.innerHTML='\u23f9 Stop Crawl';
+  crawlRunning=true;
+  document.getElementById('crawlPhase').textContent='Starting\u2026';
+  document.getElementById('crawlStepCount').textContent='';
+  try{
+    const r=await fetchWT('/crawl?steps='+steps+'&speed='+speed, 8000);
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg||'rejected');
+    document.getElementById('crawlPhase').textContent=steps===0?'Continuous crawl\u2026':'1A: FL Lift';
+    document.getElementById('crawlStepCount').textContent=steps===0?'Cycles: 0 (\u221e)':'Cycles: 0 / '+steps;
+    crawlPollTimer=setInterval(pollCrawlStatus,300);
+    lg('Crawl 1-Leg gait started \u2014 '+(steps===0?'continuous':steps+' cycles')+' @ '+speed+'ms/sub-step','inf');
+  }catch(e){
+    crawlRunning=false;
+    btn.className='play-btn stopped';
+    btn.innerHTML='\ud83d\udc22 Crawl Walk';
+    lg('Crawl command failed \u2014 '+e.message,'er2');
+  }
+}
+
+async function pollCrawlStatus(){
+  try{
+    const r=await fetchWT('/crawlstatus',2000);
+    const d=await r.json();
+    document.getElementById('crawlPhase').textContent=d.phase;
+    document.getElementById('crawlStepCount').textContent='Cycles: '+d.steps+(d.target>0?' / '+d.target:' (\u221e)');
+    if(!d.running) stopCrawlUI('Crawl complete \u2713');
+  }catch(e){}
+}
+
+function stopCrawlUI(msg){
+  crawlRunning=false;
+  clearInterval(crawlPollTimer);crawlPollTimer=null;
+  const btn=document.getElementById('crawlBtn');
+  btn.className='play-btn stopped';
+  btn.innerHTML='\ud83d\udc22 Crawl Walk';
+  document.getElementById('crawlPhase').textContent=msg||'';
+  document.getElementById('crawlStepCount').textContent='';
+  lg('Crawl Gait \u2014 '+(msg||'stopped'),'ok2');
+}
+
 
 function fk(h,f,t,mir){
   const a1=(h-90)*D2R, a2=(f-90)*D2R, a3=(t-90)*D2R;

@@ -176,7 +176,8 @@ enum Job : uint8_t {
   JOB_POSE,
   JOB_WALK,
   JOB_TURN,
-  JOB_SWEEP
+  JOB_SWEEP,
+  JOB_CRAWL
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
@@ -185,13 +186,17 @@ bool jobRight = false;
 
 inline bool robotBusy() { return jobRunning || pendingJob != JOB_NONE; }
 
-// Walk / turn state
+// Walk / turn / crawl state
 volatile bool walkRunning = false, walkStop = false;
 int walkStepsTarget = 0, walkStepsDone = 0;
 volatile bool turnRunning = false, turnStop = false;
 int turnStepsTarget = 0, turnStepsDone = 0;
 char turnDirection[6] = "none";
 char turnPhaseStr[32] = "";
+// Crawl (wave gait) state
+volatile bool crawlRunning = false, crawlStop = false;
+int crawlStepsTarget = 0, crawlStepsDone = 0;
+char crawlPhaseStr[32] = "";
 
 // =============================================================================
 // BACKGROUND SERVICE — called from every wait inside motion code
@@ -559,6 +564,13 @@ void sweepTest() {
   Serial.println("[SWEEP] Done.");
 }
 
+// =============================================================================
+// CRAWL GAIT — one leg at a time (FL -> BR -> FR -> BL)
+// Code is modularized in the dedicated "crawl_gait.h" tab!
+// =============================================================================
+#include "crawl_gait.h"
+
+
 // Runs one queued job (called from loop only)
 void runPendingJob() {
   if (pendingJob == JOB_NONE)
@@ -583,6 +595,9 @@ void runPendingJob() {
     break;
   case JOB_TURN:
     turnGait(jobSteps, jobSpeed, jobRight);
+    break;
+  case JOB_CRAWL:
+    crawlForward(jobSteps, jobSpeed);
     break;
   case JOB_SWEEP:
     sweepTest();
@@ -894,6 +909,7 @@ void setup() {
   server.on("/turnleft", hTurnLeft);
   server.on("/turnright", hTurnRight);
   server.on("/turnstatus", hTurnStatus);
+  crawlRegisterRoutes(server);
   server.on("/sweep", hSweep);
 
   // Colour sensor module (separate root: /color, /color/...)
