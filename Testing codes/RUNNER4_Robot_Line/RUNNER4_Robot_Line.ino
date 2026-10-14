@@ -371,6 +371,13 @@ bool rejectIfBusy() {
 // =============================================================================
 // WALK / TURN GAITS (your sequences, unchanged)
 // =============================================================================
+// After each sub-step: dip to LOW STAND then rise to STANDING
+// speedMs = same speed used for that gait sub-step
+void stepDipRise(int speedMs) {
+  moveToPose(3, speedMs); // LOW STAND (pose 3)
+  moveToPose(1, speedMs); // STANDING   (pose 1)
+}
+
 void walkForward(int steps, int speedMs, int variant) {
   walkRunning = true;
   walkStop = false;
@@ -382,38 +389,41 @@ void walkForward(int steps, int speedMs, int variant) {
     const int t1[4][3] = {
         {45, 45, 115}, {94, 130, 45}, {94, 116, 55}, {45, 57, 115}};
     moveToTarget(t1, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
     // 2: swing FL&BR hips
     const int t2[4][3] = {
         {25, 45, 115}, {94, 130, 45}, {94, 116, 55}, {65, 57, 115}};
     moveToTarget(t2, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
     // 3: plant FL&BR femurs
     const int t3[4][3] = {
         {25, 25, 115}, {94, 130, 45}, {94, 116, 55}, {65, 37, 115}};
     moveToTarget(t3, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
     // 4: push FL&BR hips to 45 while FR&BL femurs lift
     const int t4[4][3] = {
         {45, 25, 115}, {94, 115, 45}, {94, 91, 55}, {45, 37, 115}};
     moveToTarget(t4, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
     // 5: swing FR&BL hips
     const int t5[4][3] = {
         {45, 25, 115}, {114, 115, 45}, {74, 91, 55}, {45, 37, 115}};
     moveToTarget(t5, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
     // 6: plant FR&BL femurs
     const int t6[4][3] = {
         {45, 25, 115}, {114, 130, 45}, {74, 116, 55}, {45, 37, 115}};
     moveToTarget(t6, speedMs);
-    if (walkStop)
-      break;
+    if (walkStop) break;
+
+    // ── One full step done: dip to LOW STAND then rise to STANDING ──
+    stepDipRise(speedMs);
+    if (walkStop) break;
 
     walkStepsDone++;
     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
@@ -449,8 +459,7 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_S, BR_FEM_UP, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop)
-      break;
+    if (turnStop) break;
 
     strncpy(turnPhaseStr, "B: FL+BR swing", sizeof(turnPhaseStr));
     {
@@ -460,8 +469,7 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_SW, BR_FEM_UP, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop)
-      break;
+    if (turnStop) break;
 
     strncpy(turnPhaseStr, "C: FL+BR plant / FR+BL lift", sizeof(turnPhaseStr));
     {
@@ -471,8 +479,7 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_SW, BR_FEM_S, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop)
-      break;
+    if (turnStop) break;
 
     strncpy(turnPhaseStr, "D: FR+BL swing", sizeof(turnPhaseStr));
     {
@@ -482,8 +489,7 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_SW, BR_FEM_S, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop)
-      break;
+    if (turnStop) break;
 
     strncpy(turnPhaseStr, "E: FR+BL plant / FL+BR lift", sizeof(turnPhaseStr));
     {
@@ -493,8 +499,11 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
                            {BR_HIP_S, BR_FEM_UP, BR_TIB}};
       moveToTarget(t, speedMs);
     }
-    if (turnStop)
-      break;
+    if (turnStop) break;
+
+    // ── One full turn step done: dip to LOW STAND then rise to STANDING ──
+    stepDipRise(speedMs);
+    if (turnStop) break;
 
     turnStepsDone++;
     Serial.printf("[TURN] %s step %d/%d done\n", rightTurn ? "Right" : "Left",
