@@ -135,6 +135,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <div><span class="sdot" id="sd"></span><span class="stxt" id="st">Connecting...</span></div>
     <a class="btn btn-line" href="/line">&#128739; Line Array</a>
     <a class="btn btn-col" href="/color">&#127912; Colour Sensor</a>
+    <a class="btn btn-col" href="/health">System Health</a>
     <button class="btn btn-sw" onclick="doSweep()">&#9654; Sweep</button>
     <button class="btn btn-all" onclick="allHome()">&#8962; All HOME</button>
   </div>
@@ -331,6 +332,7 @@ let dbt={};
 let activePose=0;
 let pollTimer=null;
 let pollBusy=false;
+let missedStatePolls=0;
 
 function lg(m,t){
   const b=document.getElementById('lb');
@@ -342,7 +344,7 @@ function lg(m,t){
 
 function cst(ok){
   document.getElementById('sd').className='sdot'+(ok?' on':'');
-  document.getElementById('st').textContent=ok?'Connected \u00b7 192.168.4.1':'Disconnected';
+  document.getElementById('st').textContent=ok?'Server responding \u00b7 192.168.4.1':'Server not responding';
 }
 
 function fetchWT(url, ms) {
@@ -759,6 +761,7 @@ async function poll(){
   try{
     const r=await fetchWT('/state', 2000);
     const d=await r.json();
+    missedStatePolls=0;
     cst(true);
     let changed=false;
     for(let i=0;i<16;i++){
@@ -770,7 +773,9 @@ async function poll(){
       }
     }
     if(changed) updAllFK();
-  }catch(e){cst(false);}
+  }catch(e){
+    if(++missedStatePolls>=3)cst(false);
+  }
 }
 
 window.onload=function(){

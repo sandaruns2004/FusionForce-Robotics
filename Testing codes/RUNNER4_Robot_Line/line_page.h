@@ -89,10 +89,14 @@ $('bar'+i).style.height=(n*100)+'%';$('th'+i).style.bottom=(d.thr*100)+'%';
 $('sc'+i).className='sc'+((d.mask>>i)&1?' on':'')+((d.okmask>>i)&1?'':' dead')}
 $('calbar').style.width=(d.calact?(1-d.calleft/5000)*100:0)+'%';$('calmsg').textContent=d.calmsg;
 if(d.found){hist.push(d.err);if(hist.length>150)hist.shift();draw()}}
+let dataRequestMisses=0;
+async function getJSON(url){const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),2000);
+try{const r=await fetch(url,{signal:ctrl.signal,cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
+finally{clearTimeout(timer)}}
 async function upd(){const t=performance.now();
-try{const d=await(await fetch('/line/data')).json();pill('rt',Math.round(performance.now()-t)+' ms round-trip','ok');pill('lk','WiFi link OK','ok');render(d)}
-catch(e){pill('lk','WiFi / server lost','bad')}setTimeout(upd,150)}
-async function sys(){try{const w=await(await fetch('/line/wifi')).json();
+try{const d=await getJSON('/line/data');dataRequestMisses=0;pill('rt',Math.round(performance.now()-t)+' ms round-trip','ok');pill('lk','Server responding','ok');render(d)}
+catch(e){if(++dataRequestMisses>=3)pill('lk','Server not responding','bad')}setTimeout(upd,300)}
+async function sys(){try{const w=await getJSON('/line/wifi');
 $('sys').innerHTML=Object.entries(w).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}catch(e){}setTimeout(sys,3000)}
 loadCfg();upd();sys();
 </script></body></html>

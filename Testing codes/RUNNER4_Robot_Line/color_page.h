@@ -100,10 +100,14 @@ else if(d.match==1)pill('match','✔ MATCH – TAKE BRANCH','ok');else pill('mat
 $('votes').innerHTML=d.votes.map(v=>`<span style="background:${['#475569','#ef4444','#22c55e','#3b82f6'][v]}"></span>`).join('');
 $('capbar').style.width=(d.cap?d.capn/20*100:0)+'%';$('capmsg').textContent=d.capmsg;
 hist.push([d.nr,d.ng,d.nb]);if(hist.length>150)hist.shift();draw()}
+let dataRequestMisses=0;
+async function getJSON(url){const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),2000);
+try{const r=await fetch(url,{signal:ctrl.signal,cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
+finally{clearTimeout(timer)}}
 async function upd(){const t=performance.now();
-try{const d=await(await fetch('/color/data')).json();pill('rt',Math.round(performance.now()-t)+' ms round-trip','ok');pill('lk','WiFi link OK','ok');render(d)}
-catch(e){pill('lk','WiFi / server lost','bad')}setTimeout(upd,250)}
-async function sys(){try{const w=await(await fetch('/color/wifi')).json();
+try{const d=await getJSON('/color/data');dataRequestMisses=0;pill('rt',Math.round(performance.now()-t)+' ms round-trip','ok');pill('lk','Server responding','ok');render(d)}
+catch(e){if(++dataRequestMisses>=3)pill('lk','Server not responding','bad')}setTimeout(upd,500)}
+async function sys(){try{const w=await getJSON('/color/wifi');
 $('sys').innerHTML=Object.entries(w).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}catch(e){}setTimeout(sys,3000)}
 loadCfg();upd();sys();
 </script></body></html>

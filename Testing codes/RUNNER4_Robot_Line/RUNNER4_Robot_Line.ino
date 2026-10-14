@@ -59,6 +59,10 @@
 #include <Wire.h>
 #include <limits.h>
 #include <math.h>
+<<<<<<< HEAD
+=======
+#include <esp_system.h>
+>>>>>>> 044da38d4d9d162276486cbdc96c2c7ca6b0aa79
 
 #include "color_sensor.h" // colour module API
 #include "line_sensor.h"  // line array module API
@@ -143,6 +147,27 @@ int servoAngles[16] = {0};
 
 WebServer server(80);
 bool serverStarted = false;
+volatile uint32_t apClientConnects = 0;
+volatile uint32_t apClientDisconnects = 0;
+volatile uint32_t apStops = 0;
+esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
+
+// Wi-Fi events run on another task. Keep this callback short.
+void onWiFiEvent(WiFiEvent_t event) {
+  switch (event) {
+  case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+    ++apClientConnects;
+    break;
+  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+    ++apClientDisconnects;
+    break;
+  case ARDUINO_EVENT_WIFI_AP_STOP:
+    ++apStops;
+    break;
+  default:
+    break;
+  }
+}
 
 // =============================================================================
 // JOB SYSTEM — handlers queue work, loop() executes it
@@ -250,9 +275,16 @@ void moveToTarget(const int targetAngles[4][3], int speedMs) {
     for (int leg = 0; leg < 4; leg++)
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
+<<<<<<< HEAD
         setServo(ch, startAngles[ch] +
                          (int)roundf(
                              t * (targetAngles[leg][joint] - startAngles[ch])));
+=======
+        int nextAngle = startAngles[ch] +
+                        (int)roundf(t * (targetAngles[leg][joint] - startAngles[ch]));
+        if (nextAngle != servoAngles[ch])
+          setServo(ch, nextAngle);
+>>>>>>> 044da38d4d9d162276486cbdc96c2c7ca6b0aa79
       }
     unsigned long stepTarget =
         moveStart + (unsigned long)((long)speedMs * step / maxDiff);
@@ -594,6 +626,28 @@ void hState() {
   addCORS();
   server.send(200, "application/json", stateJSON());
 }
+<<<<<<< HEAD
+=======
+
+// Use /health to distinguish a true AP disconnect or ESP32 reset from a
+// browser request that merely timed out.
+void hHealth() {
+  String json = "{\"uptime_ms\":" + String(millis());
+  json += ",\"reset_reason\":" + String((int)bootResetReason);
+  json += ",\"brownout_reset\":";
+  json += (bootResetReason == ESP_RST_BROWNOUT ? "true" : "false");
+  json += ",\"free_heap_bytes\":" + String(ESP.getFreeHeap());
+  json += ",\"ap_clients\":" + String(WiFi.softAPgetStationNum());
+  json += ",\"ap_connects\":" + String(apClientConnects);
+  json += ",\"ap_disconnects\":" + String(apClientDisconnects);
+  json += ",\"ap_stops\":" + String(apStops);
+  json += ",\"job_running\":";
+  json += (jobRunning ? "true" : "false");
+  json += "}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
+>>>>>>> 044da38d4d9d162276486cbdc96c2c7ca6b0aa79
 
 void hHome() {
   if (rejectIfBusy())
@@ -798,6 +852,13 @@ void setup() {
   uint32_t t0 = millis();
   while (!Serial && (millis() - t0) < 3000)
     delay(10);
+<<<<<<< HEAD
+=======
+
+  bootResetReason = esp_reset_reason();
+  Serial.printf("[BOOT] Reset reason: %d%s\n", (int)bootResetReason,
+                bootResetReason == ESP_RST_BROWNOUT ? " (BROWNOUT)" : "");
+>>>>>>> 044da38d4d9d162276486cbdc96c2c7ca6b0aa79
 
   Serial.println("\n=============================================");
   Serial.println("  FusionForce RUNNER4 v5.0 — ESP32-S3");
@@ -821,15 +882,23 @@ void setup() {
   delay(1500);
 
   // WiFi AP
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.mode(WIFI_AP);
+  WiFi.onEvent(onWiFiEvent);
+  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS);
   WiFi.setSleep(false);
+<<<<<<< HEAD
   Serial.printf("WiFi AP '%s' / '%s'  ->  http://%s\n", AP_SSID, AP_PASS,
+=======
+  Serial.printf("[WIFI] AP %s: '%s' -> http://%s\n",
+                apStarted ? "started" : "FAILED", AP_SSID,
+>>>>>>> 044da38d4d9d162276486cbdc96c2c7ca6b0aa79
                 WiFi.softAPIP().toString().c_str());
 
   // Robot routes (root)
   server.on("/", hRoot);
   server.on("/set", hSet);
   server.on("/state", hState);
+  server.on("/health", hHealth);
   server.on("/home", hHome);
   server.on("/leghome", hLegHome);
   server.on("/ik", hIK);
