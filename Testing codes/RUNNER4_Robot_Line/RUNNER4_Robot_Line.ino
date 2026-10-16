@@ -26,6 +26,35 @@
 //   I2C (PCA9685 0x40 + TCS34725 0x29, shared bus)  -- MOVED from 8/9:
 //     GPIO 11 (SDA) -> PCA9685 SDA  and  TCS34725 SDA
 //     GPIO 12 (SCL) -> PCA9685 SCL  and  TCS34725 SCL
+//     3.3V / GND    -> PCA9685 VCC/GND and TCS34725//
+//     =============================================================================
+// FusionForce RUNNER4 — 12 DOF Quadruped Robot
+// MAIN ROOT : PCA9685 servo control + pose presets + FK/IK + walk/turn gaits
+// MODULES   : TCS34725 colour sensor (color_sensor.cpp/.h/color_page.h)
+//             9x TCRT5000 line array (line_sensor.cpp/.h/line_page.h)   <- NEW
+// BOARD     : ESP32-S3
+// VERSION   : 5.0
+// =============================================================================
+//
+// WEB ROUTES (one WiFi AP, one web server)
+//   http://192.168.4.1/        -> robot control page (main root, unchanged UI)
+//   http://192.168.4.1/color   -> colour sensor lab
+//   http://192.168.4.1/line    -> 9-ch line array lab                  <- NEW
+//   /color/data /color/config /color/set /color/cmd /color/wifi /color/export
+//   /line/data  /line/config  /line/set  /line/cmd  /line/wifi  /line/export
+//
+// SKETCH FOLDER (ALL files in ONE folder named RUNNER4_Robot_Line):
+//   RUNNER4_Robot_Line.ino     <- this file (robot)
+//   robot_page.h               <- robot web page (add the /line button, see
+//   report) color_sensor.h / .cpp      <- colour sensor module (LED pin now
+//   GPIO 15) color_page.h               <- colour web page line_sensor.h / .cpp
+//   <- line array module                    <- NEW line_page.h <- line array
+//   web page                  <- NEW
+//
+// WIRING (v5.0 PIN MAP - ADC1 only, because WiFi AP blocks ADC2 on ESP32-S3)
+//   I2C (PCA9685 0x40 + TCS34725 0x29, shared bus)  -- MOVED from 8/9:
+//     GPIO 11 (SDA) -> PCA9685 SDA  and  TCS34725 SDA
+//     GPIO 12 (SCL) -> PCA9685 SCL  and  TCS34725 SCL
 //     3.3V / GND    -> PCA9685 VCC/GND and TCS34725 VIN/GND
 //   TCS34725 LED pin : GPIO 15  (was GPIO 4; change COLOR_LED_PIN in
 //   color_sensor.h) Line array (TCRT5000 analog outputs, S1 far LEFT ... S9 far
@@ -57,9 +86,9 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_system.h>
 #include <limits.h>
 #include <math.h>
-#include <esp_system.h>
 
 #include "color_sensor.h" // colour module API
 #include "line_sensor.h"  // line array module API
@@ -152,10 +181,17 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 // Wi-Fi events run on a different task. Only update counters here.
 void onWiFiEvent(WiFiEvent_t event) {
   switch (event) {
-  case ARDUINO_EVENT_WIFI_AP_STACONNECTED: ++apConnectCount; break;
-  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED: ++apDisconnectCount; break;
-  case ARDUINO_EVENT_WIFI_AP_STOP: ++apStopCount; break;
-  default: break;
+  case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+    ++apConnectCount;
+    break;
+  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+    ++apDisconnectCount;
+    break;
+  case ARDUINO_EVENT_WIFI_AP_STOP:
+    ++apStopCount;
+    break;
+  default:
+    break;
   }
 }
 
