@@ -21,22 +21,25 @@ const char *AP_PASS = "runner4robot";
 // ── I2C / PCA9685 ────────────────────────────────────────────────────────────
 #define I2C_SDA 11
 #define I2C_SCL 12
-#define I2C_HZ  400000
+#define I2C_HZ 400000
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
-#define SERVOMIN   150
-#define SERVOMAX   600
+#define SERVOMIN 150
+#define SERVOMAX 600
 #define SERVO_FREQ 50
 
 // ── Timing ───────────────────────────────────────────────────────────────────
 #define START_DELAY_MS 1000
-#define MOVE_SPEED_MS  1000   // time of each pose transition (average speed)
+#define MOVE_SPEED_MS 1000 // time of each pose transition (average speed)
 
 // ── Channels: legChannels[leg][hip,femur,tibia]; leg 0=FL 1=FR 2=BL 3=BR ─────
-const uint8_t legChannels[4][3] = {{0, 1, 2}, {3, 4, 5}, {10, 11, 14}, {6, 8, 9}};
+const uint8_t legChannels[4][3] = {
+    {0, 1, 2}, {3, 4, 5}, {10, 11, 14}, {6, 8, 9}};
 
 // ── Poses [leg][hip, femur, tibia] ───────────────────────────────────────────
-const int POSE_INITIAL[4][3]  = {{45, 80, 160}, {94, 80, 0},   {94, 56, 10}, {45, 92, 160}};
-const int POSE_STANDING[4][3] = {{45, 20, 115}, {94, 135, 46}, {94, 94, 55}, {45, 37, 115}};
+const int POSE_INITIAL[4][3] = {
+    {45, 80, 160}, {94, 80, 0}, {94, 35, 10}, {45, 92, 160}};
+const int POSE_STANDING[4][3] = {
+    {45, 20, 115}, {94, 135, 46}, {94, 94, 55}, {45, 37, 115}};
 
 int servoAngles[16] = {0};
 WebServer server(80);
@@ -98,7 +101,8 @@ void waitMs(uint32_t ms) {
   uint32_t t0 = millis();
   do {
     server.handleClient();
-    if (millis() - t0 >= ms) break;
+    if (millis() - t0 >= ms)
+      break;
     delay(1);
   } while (true);
 }
@@ -109,9 +113,11 @@ void moveToTarget(const int target[4][3], int speedMs) {
   for (int leg = 0; leg < 4; leg++)
     for (int joint = 0; joint < 3; joint++) {
       int diff = abs(target[leg][joint] - servoAngles[legChannels[leg][joint]]);
-      if (diff > maxDiff) maxDiff = diff;
+      if (diff > maxDiff)
+        maxDiff = diff;
     }
-  if (maxDiff == 0) return;
+  if (maxDiff == 0)
+    return;
 
   int startAngles[16];
   memcpy(startAngles, servoAngles, sizeof(servoAngles));
@@ -124,12 +130,16 @@ void moveToTarget(const int target[4][3], int speedMs) {
         uint8_t ch = legChannels[leg][joint];
         int nextAngle = startAngles[ch] +
                         (int)roundf(t * (target[leg][joint] - startAngles[ch]));
-        if (nextAngle != servoAngles[ch]) setServo(ch, nextAngle);
+        if (nextAngle != servoAngles[ch])
+          setServo(ch, nextAngle);
       }
-    unsigned long stepTarget = moveStart + (unsigned long)((long)speedMs * step / maxDiff);
+    unsigned long stepTarget =
+        moveStart + (unsigned long)((long)speedMs * step / maxDiff);
     unsigned long now = millis();
-    if (stepTarget > now) waitMs(stepTarget - now);
-    else server.handleClient();
+    if (stepTarget > now)
+      waitMs(stepTarget - now);
+    else
+      server.handleClient();
   }
 }
 
@@ -150,7 +160,7 @@ void hPose() {
     return;
   }
   server.send(200, "application/json", "{\"ok\":true}");
-  pendingPose = id;   // executed in loop()
+  pendingPose = id; // executed in loop()
 }
 
 // =============================================================================
