@@ -19,18 +19,18 @@
 // ── I2C ──────────────────────────────────────────────────────────────────────
 #define I2C_SDA 11
 #define I2C_SCL 12
-#define I2C_HZ  400000
+#define I2C_HZ 400000
 
 // ── PCA9685 ──────────────────────────────────────────────────────────────────
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
-#define SERVOMIN   150
-#define SERVOMAX   600
+#define SERVOMIN 150
+#define SERVOMAX 600
 #define SERVO_FREQ 50
 
 // ── Timing ───────────────────────────────────────────────────────────────────
-#define START_DELAY_MS   1000   // wait after power-on
-#define INITIAL_HOLD_MS  1000   // wait in the initial pose
-#define STAND_SPEED_MS   1000   // time to move initial -> standing (average speed)
+#define START_DELAY_MS 1000  // wait after power-on
+#define INITIAL_HOLD_MS 1000 // wait in the initial pose
+#define STAND_SPEED_MS 1000  // time to move initial -> standing (average speed)
 
 // ── Channels ─────────────────────────────────────────────────────────────────
 #define FL_HIP 0
@@ -53,8 +53,10 @@ const uint8_t legChannels[4][3] = {{FL_HIP, FL_FEMUR, FL_TIBIA},
                                    {BR_HIP, BR_FEMUR, BR_TIBIA}};
 
 // ── Poses [leg][hip, femur, tibia] ───────────────────────────────────────────
-const int POSE_INITIAL[4][3]  = {{45, 80, 160}, {94, 80, 0},   {94, 56, 10}, {45, 92, 160}};
-const int POSE_STANDING[4][3] = {{45, 20, 115}, {94, 135, 46}, {94, 94, 55}, {45, 37, 115}};
+const int POSE_INITIAL[4][3] = {
+    {45, 80, 160}, {94, 80, 0}, {94, 35, 10}, {45, 92, 160}};
+const int POSE_STANDING[4][3] = {
+    {45, 20, 115}, {94, 135, 46}, {94, 94, 55}, {45, 37, 115}};
 
 int servoAngles[16] = {0};
 
@@ -88,9 +90,11 @@ void moveToTarget(const int target[4][3], int speedMs) {
   for (int leg = 0; leg < 4; leg++)
     for (int joint = 0; joint < 3; joint++) {
       int diff = abs(target[leg][joint] - servoAngles[legChannels[leg][joint]]);
-      if (diff > maxDiff) maxDiff = diff;
+      if (diff > maxDiff)
+        maxDiff = diff;
     }
-  if (maxDiff == 0) return;
+  if (maxDiff == 0)
+    return;
 
   int startAngles[16];
   memcpy(startAngles, servoAngles, sizeof(servoAngles));
@@ -103,11 +107,14 @@ void moveToTarget(const int target[4][3], int speedMs) {
         uint8_t ch = legChannels[leg][joint];
         int nextAngle = startAngles[ch] +
                         (int)roundf(t * (target[leg][joint] - startAngles[ch]));
-        if (nextAngle != servoAngles[ch]) setServo(ch, nextAngle);
+        if (nextAngle != servoAngles[ch])
+          setServo(ch, nextAngle);
       }
-    unsigned long stepTarget = moveStart + (unsigned long)((long)speedMs * step / maxDiff);
+    unsigned long stepTarget =
+        moveStart + (unsigned long)((long)speedMs * step / maxDiff);
     unsigned long now = millis();
-    if (stepTarget > now) delay(stepTarget - now);
+    if (stepTarget > now)
+      delay(stepTarget - now);
   }
 }
 
@@ -148,5 +155,4 @@ void setup() {
 // =============================================================================
 // LOOP — nothing yet, robot holds the standing pose
 // =============================================================================
-void loop() {
-}
+void loop() {}
