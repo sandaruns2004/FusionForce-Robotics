@@ -172,10 +172,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
   <div class="play-section" style="gap:5px">
     <div class="speed-row">
       <span>Instant</span>
-      <input type="range" class="speed-sl" id="transitionSl" min="0" max="3000" value="0" oninput="updTransDisplay()">
+      <input type="range" class="speed-sl" id="transitionSl" min="0" max="3000" value="1500" oninput="updTransDisplay()">
       <span>Slow</span>
     </div>
-    <div style="font-size:.6rem;color:#484f58;text-align:center"><span id="transitionVal">Instant (0ms)</span></div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center"><span id="transitionVal">1500ms</span></div>
   </div>
 
   <hr class="sb-div">
@@ -442,7 +442,7 @@ async function applyPose(id){
         if(el){ el.value=d.a[i]; document.getElementById('v'+i).textContent=d.a[i]+'\u00b0'; }
       }
       updAllFK();
-      lg('\u2605 Pose \u2192 '+POSES[id].name+(speedMs>0?' ('+speedMs+'ms)':''),'pose');
+      lg('Pose accepted: '+POSES[id].name+(speedMs>0?' ('+speedMs+'ms transition)':''),'pose');
   }catch(e){
     lg('Pose command unconfirmed ('+e.message+'); checking actual state on next poll','er2');
   }

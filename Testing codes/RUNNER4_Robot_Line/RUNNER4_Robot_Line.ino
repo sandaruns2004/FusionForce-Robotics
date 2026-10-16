@@ -265,12 +265,9 @@ void moveToTarget(const int targetAngles[4][3], int speedMs) {
     for (int leg = 0; leg < 4; leg++)
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
-        int nextAngle = startAngles[ch] +
-                        (int)roundf(t * (targetAngles[leg][joint] - startAngles[ch]));
-        // The PCA9685 keeps outputting the last pulse. Skip redundant I2C
-        // writes while this pose is interpolating.
-        if (nextAngle != servoAngles[ch])
-          setServo(ch, nextAngle);
+        setServo(ch, startAngles[ch] +
+                         (int)roundf(
+                             t * (targetAngles[leg][joint] - startAngles[ch])));
       }
     unsigned long stepTarget =
         moveStart + (unsigned long)((long)speedMs * step / maxDiff);
