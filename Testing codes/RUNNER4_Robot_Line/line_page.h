@@ -94,10 +94,11 @@ async function getJSON(url){const ctrl=new AbortController(),timer=setTimeout(()
 try{const r=await fetch(url,{signal:ctrl.signal,cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
 finally{clearTimeout(timer)}}
 async function upd(){const t=performance.now();
+if(document.hidden){setTimeout(upd,1500);return}
 try{const d=await getJSON('/line/data');dataRequestMisses=0;pill('rt',Math.round(performance.now()-t)+' ms round-trip','ok');pill('lk','Server responding','ok');render(d)}
-catch(e){if(++dataRequestMisses>=3)pill('lk','Server not responding','bad')}setTimeout(upd,300)}
-async function sys(){try{const w=await getJSON('/line/wifi');
-$('sys').innerHTML=Object.entries(w).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}catch(e){}setTimeout(sys,3000)}
+catch(e){if(++dataRequestMisses>=3)pill('lk','Server not responding','bad')}setTimeout(upd,750)}
+async function sys(){if(!document.hidden)try{const w=await getJSON('/line/wifi');
+$('sys').innerHTML=Object.entries(w).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}catch(e){}setTimeout(sys,6000)}
 loadCfg();upd();sys();
 </script></body></html>
 )rawliteral";

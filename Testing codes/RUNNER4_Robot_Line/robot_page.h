@@ -391,7 +391,7 @@ function mv(ch,val){
   for(let i=0;i<4;i++){if(CH[i].includes(ch)){leg=i;break;}}
   if(leg>=0) updFK(leg);
   clearTimeout(dbt[ch]);
-  dbt[ch]=setTimeout(()=>send(ch,val),75);
+  dbt[ch]=setTimeout(()=>send(ch,val),180);
 }
 
 function step(ch,d){
@@ -407,7 +407,7 @@ async function send(ch,a){
     if(!r.ok) throw new Error('bad status');
     cst(true);
     lg('CH'+String(ch).padStart(2,'0')+' \u2192 '+a+'\u00b0','ok2');
-  }catch(e){cst(false);lg('TX fail CH'+ch+' (robot busy?)','er2');}
+  }catch(e){lg('TX fail CH'+ch+' ('+e.message+')','er2');}
 }
 
 function updTransDisplay(){
@@ -417,11 +417,6 @@ function updTransDisplay(){
 function getPoseSpeed(){ return parseInt(document.getElementById('transitionSl').value); }
 
 async function applyPose(id){
-  activePose=id;
-  for(let i=0;i<POSES.length;i++){
-    const el=document.getElementById('pb'+i);
-    if(el) el.classList.toggle('active',i===id);
-  }
   for(let c=0;c<4;c++){
     const card=document.getElementById('card'+c);
     card.classList.remove('pose-anim');
@@ -429,15 +424,18 @@ async function applyPose(id){
     card.classList.add('pose-anim');
   }
   pausePoll();
-  let success=false;
   const speedMs = getPoseSpeed();
   const timeoutMs = 5000 + speedMs;
-  for(let attempt=0; attempt<2; attempt++){
-    try{
+  try{
       const r=await fetchWT('/pose?id='+id+'&speed='+speedMs, timeoutMs);
-      if(!r.ok) throw new Error('bad status');
+      if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
       cst(true);
+      activePose=id;
+      for(let i=0;i<POSES.length;i++){
+        const el=document.getElementById('pb'+i);
+        if(el) el.classList.toggle('active',i===id);
+      }
       for(let i=0;i<16;i++){
         A[i]=d.a[i];
         const el=document.getElementById('s'+i);
@@ -445,28 +443,8 @@ async function applyPose(id){
       }
       updAllFK();
       lg('\u2605 Pose \u2192 '+POSES[id].name+(speedMs>0?' ('+speedMs+'ms)':''),'pose');
-      success=true;
-      break;
-    }catch(e){
-      if(attempt===0){
-        lg('Pose attempt 1 failed, retrying...','inf');
-        await new Promise(res=>setTimeout(res,400));
-      }
-    }
-  }
-  if(!success){
-    lg('\u26a0 Cannot reach ESP32 or robot busy — UI updated only, motors unchanged','er2');
-    const ang=POSES[id].angles;
-    for(let leg=0;leg<4;leg++){
-      for(let j=0;j<3;j++){
-        const ch=CH[leg][j];
-        A[ch]=ang[leg][j];
-        const el=document.getElementById('s'+ch);
-        if(el){el.value=ang[leg][j];document.getElementById('v'+ch).textContent=ang[leg][j]+'\u00b0';}
-      }
-    }
-    updAllFK();
-    cst(false);
+  }catch(e){
+    lg('Pose command unconfirmed ('+e.message+'); checking actual state on next poll','er2');
   }
   resumePoll();
 }
@@ -499,7 +477,7 @@ async function savePose(id){
   resumePoll();
 }
 
-let walkRunning=false, walkVariant=0, walkPollTimer=null;
+let walkRunning=false, walkVariant=0, walkPollTimer=null, walkStatusInFlight=false;
 
 function setWalkVariant(v){
   walkVariant=v;
@@ -534,7 +512,7 @@ async function toggleWalk(){
     if(!d.ok) throw new Error(d.msg||'rejected');
     document.getElementById('walkPhase').textContent=steps===0?'Continuous walk\u2026':'Phase: FL+BR up';
     document.getElementById('walkStepCount').textContent=steps===0?'Steps: 0 (\u221e)':'Steps: 0 / '+steps;
-    walkPollTimer=setInterval(pollWalkStatus,400);
+    walkPollTimer=setInterval(pollWalkStatus,800);
     lg('Walk '+(variant===0?'Basic':'Enhanced')+' started \u2014 '+(steps===0?'continuous':steps+' steps')+' @ '+speed+'ms/step','inf');
   }catch(e){
     walkRunning=false;
@@ -545,6 +523,8 @@ async function toggleWalk(){
 }
 
 async function pollWalkStatus(){
+  if(document.hidden||walkStatusInFlight)return;
+  walkStatusInFlight=true;
   try{
     const r=await fetchWT('/walkstatus',2000);
     const d=await r.json();
@@ -552,7 +532,7 @@ async function pollWalkStatus(){
     document.getElementById('walkPhase').textContent='Phase: '+phase;
     document.getElementById('walkStepCount').textContent='Steps: '+d.steps+(d.target>0?' / '+d.target:' (\u221e)');
     if(!d.running) stopWalkUI('Walk complete \u2713');
-  }catch(e){}
+  }catch(e){}finally{walkStatusInFlight=false;}
 }
 
 function stopWalkUI(msg){
@@ -566,7 +546,7 @@ function stopWalkUI(msg){
   lg('Walk Forward \u2014 '+(msg||'stopped'),'ok2');
 }
 
-let turnLRunning=false, turnLPollTimer=null;
+let turnLRunning=false, turnLPollTimer=null, turnLStatusInFlight=false;
 function updTurnLSpeed(){ document.getElementById('turnLSpeedVal').textContent=document.getElementById('turnLSpeedSl').value; }
 
 async function toggleTurnLeft(){
@@ -589,7 +569,7 @@ async function toggleTurnLeft(){
     if(!d.ok) throw new Error(d.msg||'rejected');
     document.getElementById('turnLPhase').textContent='Turning Left\u2026';
     document.getElementById('turnLStepCount').textContent='Steps: 0 / '+steps;
-    turnLPollTimer=setInterval(pollTurnLStatus,400);
+    turnLPollTimer=setInterval(pollTurnLStatus,800);
     lg('Turn Left started \u2014 '+steps+' steps @ '+speed+'ms/step','inf');
   }catch(e){
     turnLRunning=false;
@@ -600,13 +580,15 @@ async function toggleTurnLeft(){
 }
 
 async function pollTurnLStatus(){
+  if(document.hidden||turnLStatusInFlight)return;
+  turnLStatusInFlight=true;
   try{
     const r=await fetchWT('/turnstatus?dir=left',2000);
     const d=await r.json();
     document.getElementById('turnLPhase').textContent='Phase: '+d.phase;
     document.getElementById('turnLStepCount').textContent='Steps: '+d.steps+' / '+d.target;
     if(!d.running) stopTurnLUI('Turn Left complete \u2713');
-  }catch(e){}
+  }catch(e){}finally{turnLStatusInFlight=false;}
 }
 
 function stopTurnLUI(msg){
@@ -620,7 +602,7 @@ function stopTurnLUI(msg){
   lg('Turn Left \u2014 '+(msg||'stopped'),'ok2');
 }
 
-let turnRRunning=false, turnRPollTimer=null;
+let turnRRunning=false, turnRPollTimer=null, turnRStatusInFlight=false;
 function updTurnRSpeed(){ document.getElementById('turnRSpeedVal').textContent=document.getElementById('turnRSpeedSl').value; }
 
 async function toggleTurnRight(){
@@ -643,7 +625,7 @@ async function toggleTurnRight(){
     if(!d.ok) throw new Error(d.msg||'rejected');
     document.getElementById('turnRPhase').textContent='Turning Right\u2026';
     document.getElementById('turnRStepCount').textContent='Steps: 0 / '+steps;
-    turnRPollTimer=setInterval(pollTurnRStatus,400);
+    turnRPollTimer=setInterval(pollTurnRStatus,800);
     lg('Turn Right started \u2014 '+steps+' steps @ '+speed+'ms/step','inf');
   }catch(e){
     turnRRunning=false;
@@ -654,13 +636,15 @@ async function toggleTurnRight(){
 }
 
 async function pollTurnRStatus(){
+  if(document.hidden||turnRStatusInFlight)return;
+  turnRStatusInFlight=true;
   try{
     const r=await fetchWT('/turnstatus?dir=right',2000);
     const d=await r.json();
     document.getElementById('turnRPhase').textContent='Phase: '+d.phase;
     document.getElementById('turnRStepCount').textContent='Steps: '+d.steps+' / '+d.target;
     if(!d.running) stopTurnRUI('Turn Right complete \u2713');
-  }catch(e){}
+  }catch(e){}finally{turnRStatusInFlight=false;}
 }
 
 function stopTurnRUI(msg){
@@ -674,7 +658,7 @@ function stopTurnRUI(msg){
   lg('Turn Right \u2014 '+(msg||'stopped'),'ok2');
 }
 
-let crawlRunning=false, crawlPollTimer=null;
+let crawlRunning=false, crawlPollTimer=null, crawlStatusInFlight=false;
 function updCrawlSpeed(){ document.getElementById('crawlSpeedVal').textContent=document.getElementById('crawlSpeedSl').value; }
 
 async function toggleCrawl(){
@@ -697,7 +681,7 @@ async function toggleCrawl(){
     if(!d.ok) throw new Error(d.msg||'rejected');
     document.getElementById('crawlPhase').textContent=steps===0?'Continuous crawl\u2026':'1A: FL Lift';
     document.getElementById('crawlStepCount').textContent=steps===0?'Cycles: 0 (\u221e)':'Cycles: 0 / '+steps;
-    crawlPollTimer=setInterval(pollCrawlStatus,300);
+    crawlPollTimer=setInterval(pollCrawlStatus,1000);
     lg('Crawl 1-Leg gait started \u2014 '+(steps===0?'continuous':steps+' cycles')+' @ '+speed+'ms/sub-step','inf');
   }catch(e){
     crawlRunning=false;
@@ -708,13 +692,15 @@ async function toggleCrawl(){
 }
 
 async function pollCrawlStatus(){
+  if(document.hidden||crawlStatusInFlight)return;
+  crawlStatusInFlight=true;
   try{
     const r=await fetchWT('/crawlstatus',2000);
     const d=await r.json();
     document.getElementById('crawlPhase').textContent=d.phase;
     document.getElementById('crawlStepCount').textContent='Cycles: '+d.steps+(d.target>0?' / '+d.target:' (\u221e)');
     if(!d.running) stopCrawlUI('Crawl complete \u2713');
-  }catch(e){}
+  }catch(e){}finally{crawlStatusInFlight=false;}
 }
 
 function stopCrawlUI(msg){
@@ -806,7 +792,7 @@ async function legHome(l){
     updFK(l);
     cst(true);
     lg('Leg '+['FL','FR','BL','BR'][l]+' \u2192 HOME','ok2');
-  }catch(e){cst(false);lg('legHome failed — check WiFi / robot busy','er2');}
+  }catch(e){lg('legHome failed — '+e.message,'er2');}
   resumePoll();
 }
 
@@ -826,7 +812,7 @@ async function allHome(){
     activePose=0;
     cst(true);
     lg('All 12 servos \u2192 HOME (Initial)','ok2');
-  }catch(e){cst(false);lg('allHome failed — check WiFi / robot busy','er2');}
+  }catch(e){lg('allHome failed — '+e.message,'er2');}
   resumePoll();
 }
 
@@ -836,8 +822,10 @@ async function doSweep(){
   catch(e){lg('Sweep trigger failed','er2');}
 }
 
+let statePollInFlight=false;
 async function poll(){
-  if(pollBusy) return;
+  if(pollBusy||document.hidden||statePollInFlight) return;
+  statePollInFlight=true;
   try{
     const r=await fetchWT('/state', 2000);
     const d=await r.json();
@@ -855,7 +843,7 @@ async function poll(){
     if(changed) updAllFK();
   }catch(e){
     if(++missedStatePolls>=3)cst(false);
-  }
+  }finally{statePollInFlight=false;}
 }
 
 window.onload=function(){

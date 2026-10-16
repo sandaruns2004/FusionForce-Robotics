@@ -59,6 +59,7 @@
 #include <Wire.h>
 #include <limits.h>
 #include <math.h>
+#include <esp_system.h>
 
 #include "color_sensor.h" // colour module API
 #include "line_sensor.h"  // line array module API
@@ -143,6 +144,20 @@ int servoAngles[16] = {0};
 
 WebServer server(80);
 bool serverStarted = false;
+volatile uint32_t apConnectCount = 0;
+volatile uint32_t apDisconnectCount = 0;
+volatile uint32_t apStopCount = 0;
+esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
+
+// Wi-Fi events run on a different task. Only update counters here.
+void onWiFiEvent(WiFiEvent_t event) {
+  switch (event) {
+  case ARDUINO_EVENT_WIFI_AP_STACONNECTED: ++apConnectCount; break;
+  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED: ++apDisconnectCount; break;
+  case ARDUINO_EVENT_WIFI_AP_STOP: ++apStopCount; break;
+  default: break;
+  }
+}
 
 // =============================================================================
 // JOB SYSTEM — handlers queue work, loop() executes it
@@ -250,9 +265,12 @@ void moveToTarget(const int targetAngles[4][3], int speedMs) {
     for (int leg = 0; leg < 4; leg++)
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
-        setServo(ch, startAngles[ch] +
-                         (int)roundf(
-                             t * (targetAngles[leg][joint] - startAngles[ch])));
+        int nextAngle = startAngles[ch] +
+                        (int)roundf(t * (targetAngles[leg][joint] - startAngles[ch]));
+        // The PCA9685 keeps outputting the last pulse. Skip redundant I2C
+        // writes while this pose is interpolating.
+        if (nextAngle != servoAngles[ch])
+          setServo(ch, nextAngle);
       }
     unsigned long stepTarget =
         moveStart + (unsigned long)((long)speedMs * step / maxDiff);
@@ -586,6 +604,23 @@ void hState() {
   server.send(200, "application/json", stateJSON());
 }
 
+// Compare these values before and after a dropout. An HTTP timeout alone is
+// not evidence that the phone disconnected from the access point.
+void hHealth() {
+  String json = "{\"uptime_ms\":" + String(millis());
+  json += ",\"reset_reason\":" + String((int)bootResetReason);
+  json += ",\"brownout_reset\":";
+  json += (bootResetReason == ESP_RST_BROWNOUT ? "true" : "false");
+  json += ",\"free_heap_bytes\":" + String(ESP.getFreeHeap());
+  json += ",\"ap_clients\":" + String(WiFi.softAPgetStationNum());
+  json += ",\"ap_connects\":" + String(apConnectCount);
+  json += ",\"ap_disconnects\":" + String(apDisconnectCount);
+  json += ",\"ap_stops\":" + String(apStopCount);
+  json += "}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
+
 void hHome() {
   if (rejectIfBusy())
     return;
@@ -790,6 +825,10 @@ void setup() {
   while (!Serial && (millis() - t0) < 3000)
     delay(10);
 
+  bootResetReason = esp_reset_reason();
+  Serial.printf("[BOOT] Reset reason: %d%s\n", (int)bootResetReason,
+                bootResetReason == ESP_RST_BROWNOUT ? " (BROWNOUT)" : "");
+
   Serial.println("\n=============================================");
   Serial.println("  FusionForce RUNNER4 v5.0 — ESP32-S3");
   Serial.println("  Robot (/)  +  Colour (/color)  +  Line (/line)");
@@ -812,15 +851,19 @@ void setup() {
   delay(1500);
 
   // WiFi AP
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.mode(WIFI_AP);
+  WiFi.onEvent(onWiFiEvent);
+  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS);
   WiFi.setSleep(false);
-  Serial.printf("WiFi AP '%s' / '%s'  ->  http://%s\n", AP_SSID, AP_PASS,
+  Serial.printf("[WIFI] AP %s: '%s' -> http://%s\n",
+                apStarted ? "started" : "FAILED", AP_SSID,
                 WiFi.softAPIP().toString().c_str());
 
   // Robot routes (root)
   server.on("/", hRoot);
   server.on("/set", hSet);
   server.on("/state", hState);
+  server.on("/health", hHealth);
   server.on("/home", hHome);
   server.on("/leghome", hLegHome);
   server.on("/ik", hIK);
