@@ -60,11 +60,9 @@
 #include <limits.h>
 #include <math.h>
 
-
 #include "color_sensor.h" // colour module API
 #include "line_sensor.h"  // line array module API
 #include "robot_page.h"   // INDEX_HTML
-
 
 struct Vec3f {
   float x, y, z;
@@ -116,7 +114,7 @@ int poseAngles[13][4][3] = {
     // 0 INITIAL (HOME)
     {{45, 80, 160}, {94, 80, 0}, {94, 56, 10}, {45, 92, 160}},
     // 1 STANDING
-    {{45, 25, 115}, {94, 135, 45}, {94, 111, 55}, {45, 37, 115}},
+    {{45, 20, 115}, {94, 135, 46}, {94, 94, 55}, {45, 37, 115}},
     // 2 LOW CROUCH
     {{45, 110, 140}, {94, 110, 40}, {94, 110, 140}, {45, 110, 140}},
     // 3 LOW STAND
