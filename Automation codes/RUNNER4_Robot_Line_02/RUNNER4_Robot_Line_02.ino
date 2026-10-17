@@ -119,7 +119,7 @@ int poseAngles[13][4][3] = {
     // 2 LOW CROUCH
     {{45, 110, 140}, {94, 110, 40}, {94, 110, 140}, {45, 110, 140}},
     // 3 LOW STAND
-    {{45, 29, 119}, {94, 112, 30}, {94, 86, 40}, {45, 62, 130}},
+    {{45, 29, 119}, {94, 112, 35}, {94, 86, 50}, {45, 48, 120}},
     // 4 FL LEG UP
     {{45, 38, 115}, {94, 125, 35}, {94, 101, 45}, {45, 80, 160}},
     // 5 FR LEG UP
@@ -477,47 +477,6 @@ void buildGaitPose(int out[4][3], const int hipBase[4], const int hipSign[4],
 // =============================================================================
 // WALK GAIT (uses WALK_HIP_DELTA and WALK_FEMUR_DELTA)
 // =============================================================================
-// void walkForward(int steps, int speedMs, int variant) {
-//   syncGaitBase(); // gait follows the STANDING pose
-//   walkRunning = true;
-//   walkStop = false;
-//   walkStepsDone = 0;
-//   int totalCycles = (steps == 0) ? INT_MAX : steps;
-
-//   int femDelta[4];
-//   for (int l = 0; l < 4; l++)
-//     femDelta[l] = WALK_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
-
-//   // {swingMask, liftMask} for the 6 phases
-//   const uint8_t seq[6][2] = {{0, M_FL | M_BR},           // 1: FL&BR femurs
-//   lift
-//                              {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR
-//                              hips {M_FL | M_BR, 0}, // 3: plant FL&BR femurs
-//                              {0, M_FR | M_BL}, // 4: FL&BR hips back, FR&BL
-//                              lift {M_FR | M_BL, M_FR | M_BL}, // 5: swing
-//                              FR&BL hips {M_FR | M_BL, 0}}; // 6: plant FR&BL
-//                              femurs
-
-//   for (int i = 0; i < totalCycles && !walkStop; i++) {
-//     for (int p = 0; p < 6 && !walkStop; p++) {
-//       int t[4][3];
-//       buildGaitPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, WALK_HIP_DELTA,
-//                     WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
-//                     seq[p][1]);
-//       moveToTarget(t, speedMs);
-//     }
-//     if (walkStop)
-//       break;
-//     walkStepsDone++;
-//     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
-//                   (steps == 0) ? -1 : steps);
-//   }
-//   moveToPose(1, 500); // Return to STANDING pose
-//   walkRunning = false;
-//   Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
-//                 variant == 0 ? "Basic" : "Enhanced");
-// }
-
 void walkForward(int steps, int speedMs, int variant) {
   syncGaitBase(); // gait follows the STANDING pose
   walkRunning = true;
@@ -529,19 +488,17 @@ void walkForward(int steps, int speedMs, int variant) {
   for (int l = 0; l < 4; l++)
     femDelta[l] = WALK_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
 
-  // {swingMask, liftMask} for the 8 phases
-  const uint8_t seq[8][2] = {
-      {0, M_FL | M_BR},           // 1: FL&BR femurs lift
-      {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
-      {M_FL | M_BR, 0},           // 3: plant FL&BR femurs (down)
-      {0, 0},                     // 4: FL&BR hips back, all feet on ground
-      {0, M_FR | M_BL},           // 5: FR&BL femurs lift (after FL&BR is down)
-      {M_FR | M_BL, M_FR | M_BL}, // 6: swing FR&BL hips
-      {M_FR | M_BL, 0},           // 7: plant FR&BL femurs (down)
-      {0, 0}};                    // 8: FR&BL hips back, all feet on ground
+  // {swingMask, liftMask} for the 6 phases
+  const uint8_t seq[6][2] = {{0, M_FL | M_BR},               // 1: FL&BR femurs
+                             lift{M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR
+                             hips{M_FL | M_BR, 0}, // 3: plant FL&BR femurs
+                             {0, M_FR | M_BL},     // 4: FL&BR hips back, FR&BL
+                             lift{M_FR | M_BL, M_FR | M_BL}, // 5: swing
+                             FR & BL hips{M_FR | M_BL, 0}};  // 6: plant FR&BL
+  femurs
 
-  for (int i = 0; i < totalCycles && !walkStop; i++) {
-    for (int p = 0; p < 8 && !walkStop; p++) {
+      for (int i = 0; i < totalCycles && !walkStop; i++) {
+    for (int p = 0; p < 6 && !walkStop; p++) {
       int t[4][3];
       buildGaitPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, WALK_HIP_DELTA,
                     WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
