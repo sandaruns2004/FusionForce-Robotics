@@ -106,9 +106,15 @@ void finishCal() {
     if (cMax[i] > cMin[i] && (cMax[i] - cMin[i]) >= cfg.minSpan) good++;
     else { char t[8]; snprintf(t, sizeof(t), " S%d", i + 1); strncat(dead, t, sizeof(dead) - strlen(dead) - 1); }
   }
-  cfg.calValid = good > 0;
-  if (good == N) snprintf(calMsg, sizeof(calMsg), "CAL OK: all %d sensors good (press Save to keep)", N);
-  else snprintf(calMsg, sizeof(calMsg), "CAL: %d/%d good. Dead/flat:%s", good, N, dead);
+  // This is a 9-sensor line array. Treating one changing input as a valid
+  // calibration made the dashboard say "calibrated" even when the other
+  // eight channels were disconnected, on the wrong GPIOs, or flat.
+  cfg.calValid = (good == N);
+  if (cfg.calValid) {
+    snprintf(calMsg, sizeof(calMsg), "CAL OK: all %d sensors good (press Save to keep)", N);
+  } else {
+    snprintf(calMsg, sizeof(calMsg), "CAL INCOMPLETE: %d/%d good; check dead/flat:%s", good, N, dead);
+  }
   flushFilters();
 }
 
@@ -149,7 +155,7 @@ void cycle(uint32_t now) {
     float n = constrain((ema[i] - cfg.calMin[i]) / (float)span, 0.0f, 1.0f);
     norm[i] = cfg.whiteHigh ? n : 1.0f - n;
   }
-  if (!cfg.calValid) { statusTxt = "NO CAL"; found = false; wz = 0; return; }
+  if (!cfg.calValid) { statusTxt = "CAL INCOMPLETE"; found = false; wz = 0; return; }
 
   // weighted centroid
   float sumW = 0, sumV = 0; activeCnt = 0; activeMask = 0;
