@@ -64,10 +64,11 @@
 #include <limits.h>
 #include <math.h>
 
-#include "color_sensor.h"  // colour module API
-#include "line_sensor.h"   // line array module API
-#include "robot_page.h"    // INDEX_HTML
-#include "line_follow.h"   // line-following gait + /linefollow web page
+#include "color_sensor.h" // colour module API
+#include "line_follow.h"  // line-following gait + /linefollow web page
+#include "line_sensor.h"  // line array module API
+#include "robot_page.h"   // INDEX_HTML
+
 
 struct Vec3f {
   float x, y, z;
@@ -175,7 +176,7 @@ const int FEMUR_LIFT_SIGN[4] = {+1, -1, -1, +1};
 // default STANDING angles the gait is exactly the same as before.
 // Leg order: FL, FR, BL, BR
 const int WALK_FEM_OFFSET[4] = {0, 0, 0, 0};
-const int TURN_FEM_OFFSET[4] = {+5, 0, +17, 0};
+const int TURN_FEM_OFFSET[4] = {0, 0, 0, 0};
 const int GAIT_TIB_OFFSET[4] = {0, 0, 0, 0};
 
 // Filled by syncGaitBase() from poseAngles[1] each time a gait starts
@@ -235,8 +236,8 @@ enum Job : uint8_t {
   JOB_WALK,
   JOB_TURN,
   JOB_SWEEP,
-  JOB_CRAWL,         // = 7  (used by crawl_gait.h)
-  JOB_LINEFOLLOW     // = 8  (used by line_follow.h)
+  JOB_CRAWL,     // = 7  (used by crawl_gait.h)
+  JOB_LINEFOLLOW // = 8  (used by line_follow.h)
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
@@ -520,6 +521,83 @@ void walkForward(int steps, int speedMs, int variant) {
 // =============================================================================
 // TURN GAIT (uses TURN_HIP_DELTA and TURN_FEMUR_DELTA)
 // =============================================================================
+// void turnGait(int steps, int speedMs, bool rightTurn) {
+//   syncGaitBase(); // gait follows the STANDING pose
+//   turnRunning = true;
+//   turnStop = false;
+//   turnStepsDone = 0;
+//   strncpy(turnDirection, rightTurn ? "right" : "left",
+//   sizeof(turnDirection));
+
+//   const int dir = rightTurn ? -1 : +1;
+//   const int turnHipSign[4] = {dir, dir, dir, dir};
+//   const int femDelta[4] = {TURN_FEMUR_DELTA, TURN_FEMUR_DELTA,
+//   TURN_FEMUR_DELTA,
+//                            TURN_FEMUR_DELTA};
+
+//   const uint8_t seq[5][2] = {{0, M_FL | M_BR},                         // A
+//                              {M_FL | M_BR, M_FL | M_BR},               // B
+//                              {M_FL | M_BR, M_FR | M_BL},               // C
+//                              {M_FL | M_FR | M_BL | M_BR, M_FR | M_BL}, // D
+//                              {M_FR | M_BL, M_FL | M_BR}};              // E
+//   const char *names[5] = {"A: FL+BR lift", "B: FL+BR swing",
+//                           "C: FL+BR plant / FR+BL lift", "D: FR+BL swing",
+//                           "E: FR+BL plant / FL+BR lift"};
+
+//   for (int i = 0; i < steps && !turnStop; i++) {
+//     for (int p = 0; p < 5 && !turnStop; p++) {
+//       strncpy(turnPhaseStr, names[p], sizeof(turnPhaseStr));
+//       int t[4][3];
+//       buildGaitPose(t, TURN_HIP_BASE, turnHipSign, TURN_HIP_DELTA,
+//                     TURN_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
+//                     seq[p][1]);
+//       moveToTarget(t, speedMs);
+//     }
+//     if (turnStop)
+//       break;
+//     turnStepsDone++;
+//     Serial.printf("[TURN] %s step %d/%d done\n", rightTurn ? "Right" :
+//     "Left",
+//                   turnStepsDone, steps);
+//   }
+//   strncpy(turnPhaseStr, "done", sizeof(turnPhaseStr));
+//   moveToPose(1, 500); // Return to STANDING pose
+//   turnRunning = false;
+//   Serial.printf("[TURN] %s complete. Steps=%d\n", rightTurn ? "Right" :
+//   "Left",
+//                 turnStepsDone);
+// }
+
+// void sweepTest() {
+//   Serial.println("[SWEEP] BR FEMUR (CH8): 0 -> 90 -> 0");
+//   for (int a = 0; a <= 90; a++) {
+//     setServo(BR_FEMUR, a);
+//     waitMs(15);
+//   }
+//   waitMs(200);
+//   for (int a = 90; a >= 0; a--) {
+//     setServo(BR_FEMUR, a);
+//     waitMs(15);
+//   }
+//   waitMs(200);
+//   setLegHome(3);
+//   Serial.println("[SWEEP] Done.");
+// }
+
+// =============================================================================
+// TURN GAIT (uses TURN_HIP_DELTA and TURN_FEMUR_DELTA)
+// Replace the whole old turnGait() function with this one.
+//
+// Start: go to STANDING pose, then repeat the 6 phases below.
+//   1. lift FL&BR femurs (FR&BL hips return to base)
+//   2. swing FL&BR hips
+//   3. put down FL&BR femurs
+//   4. lift FR&BL femurs while FL&BR hips return to base
+//   5. swing FR&BL hips
+//   6. put down FR&BL femurs
+//   (next cycle) 1. lift FL&BR femurs while FR&BL hips return to base
+//                2. swing FL&BR hips ...
+// =============================================================================
 void turnGait(int steps, int speedMs, bool rightTurn) {
   syncGaitBase(); // gait follows the STANDING pose
   turnRunning = true;
@@ -532,17 +610,24 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
   const int femDelta[4] = {TURN_FEMUR_DELTA, TURN_FEMUR_DELTA, TURN_FEMUR_DELTA,
                            TURN_FEMUR_DELTA};
 
-  const uint8_t seq[5][2] = {{0, M_FL | M_BR},                         // A
-                             {M_FL | M_BR, M_FL | M_BR},               // B
-                             {M_FL | M_BR, M_FR | M_BL},               // C
-                             {M_FL | M_FR | M_BL | M_BR, M_FR | M_BL}, // D
-                             {M_FR | M_BL, M_FL | M_BR}};              // E
-  const char *names[5] = {"A: FL+BR lift", "B: FL+BR swing",
-                          "C: FL+BR plant / FR+BL lift", "D: FR+BL swing",
-                          "E: FR+BL plant / FL+BR lift"};
+  // {swingMask, liftMask} for the 6 phases
+  const uint8_t seq[6][2] = {
+      {0, M_FL | M_BR},           // 1: FL&BR lift, all hips at base
+      {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
+      {M_FL | M_BR, 0},           // 3: put down FL&BR femurs
+      {0, M_FR | M_BL},           // 4: FR&BL lift, FL&BR hips return to base
+      {M_FR | M_BL, M_FR | M_BL}, // 5: swing FR&BL hips
+      {M_FR | M_BL, 0}};          // 6: put down FR&BL femurs
+  const char *names[6] = {
+      "1: FL+BR lift / FR+BL back", "2: FL+BR swing", "3: FL+BR put down",
+      "4: FR+BL lift / FL+BR back", "5: FR+BL swing", "6: FR+BL put down"};
+
+  // First go to the STANDING pose
+  strncpy(turnPhaseStr, "standing", sizeof(turnPhaseStr));
+  moveToPose(1, 500);
 
   for (int i = 0; i < steps && !turnStop; i++) {
-    for (int p = 0; p < 5 && !turnStop; p++) {
+    for (int p = 0; p < 6 && !turnStop; p++) {
       strncpy(turnPhaseStr, names[p], sizeof(turnPhaseStr));
       int t[4][3];
       buildGaitPose(t, TURN_HIP_BASE, turnHipSign, TURN_HIP_DELTA,
@@ -561,22 +646,6 @@ void turnGait(int steps, int speedMs, bool rightTurn) {
   turnRunning = false;
   Serial.printf("[TURN] %s complete. Steps=%d\n", rightTurn ? "Right" : "Left",
                 turnStepsDone);
-}
-
-void sweepTest() {
-  Serial.println("[SWEEP] BR FEMUR (CH8): 0 -> 90 -> 0");
-  for (int a = 0; a <= 90; a++) {
-    setServo(BR_FEMUR, a);
-    waitMs(15);
-  }
-  waitMs(200);
-  for (int a = 90; a >= 0; a--) {
-    setServo(BR_FEMUR, a);
-    waitMs(15);
-  }
-  waitMs(200);
-  setLegHome(3);
-  Serial.println("[SWEEP] Done.");
 }
 
 // Runs one queued job (called from loop only)
@@ -928,8 +997,8 @@ void setup() {
 
   server.begin();
   serverStarted = true;
-  Serial.println(
-      "HTTP server running.  Robot: /   Colour: /color   Line: /line   LineFollow: /linefollow\n");
+  Serial.println("HTTP server running.  Robot: /   Colour: /color   Line: "
+                 "/line   LineFollow: /linefollow\n");
 }
 
 // =============================================================================
