@@ -166,7 +166,7 @@ int CRAWL_FEMUR_DELTA = 15; // femur lift per step, degrees
 const int WALK_HIP_SIGN[4] = {-1, +1, -1, +1};
 // Hip direction while turning: all legs share one sign (right = -1, left = +1)
 // Femur lift direction: FL +, FR -, BL -, BR +
-const int FEMUR_LIFT_SIGN[4] = {+1, -1, -1, +1};
+const int FEMUR_LIFT_SIGN[4] = {+1, -1, +1, +1};
 
 // ---- Gait follows the STANDING pose (pose 1) ----
 // Change the STANDING angles (in the poseAngles table, or from the web page)
