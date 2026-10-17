@@ -158,7 +158,7 @@ int TURN_HIP_DELTA = 20;   // hip swing, degrees (same on all 4 legs)
 int TURN_FEMUR_DELTA = 20; // femur lift, degrees
 
 // ---- CRAWL (1-leg-at-a-time wave gait) ----
-int CRAWL_HIP_DELTA   = 30; // hip swing per step, degrees
+int CRAWL_HIP_DELTA = 30;   // hip swing per step, degrees
 int CRAWL_FEMUR_DELTA = 15; // femur lift per step, degrees
 
 // ---- Signs and base values (change only if you remount or recalibrate servos)
@@ -477,6 +477,47 @@ void buildGaitPose(int out[4][3], const int hipBase[4], const int hipSign[4],
 // =============================================================================
 // WALK GAIT (uses WALK_HIP_DELTA and WALK_FEMUR_DELTA)
 // =============================================================================
+// void walkForward(int steps, int speedMs, int variant) {
+//   syncGaitBase(); // gait follows the STANDING pose
+//   walkRunning = true;
+//   walkStop = false;
+//   walkStepsDone = 0;
+//   int totalCycles = (steps == 0) ? INT_MAX : steps;
+
+//   int femDelta[4];
+//   for (int l = 0; l < 4; l++)
+//     femDelta[l] = WALK_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
+
+//   // {swingMask, liftMask} for the 6 phases
+//   const uint8_t seq[6][2] = {{0, M_FL | M_BR},           // 1: FL&BR femurs
+//   lift
+//                              {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR
+//                              hips {M_FL | M_BR, 0}, // 3: plant FL&BR femurs
+//                              {0, M_FR | M_BL}, // 4: FL&BR hips back, FR&BL
+//                              lift {M_FR | M_BL, M_FR | M_BL}, // 5: swing
+//                              FR&BL hips {M_FR | M_BL, 0}}; // 6: plant FR&BL
+//                              femurs
+
+//   for (int i = 0; i < totalCycles && !walkStop; i++) {
+//     for (int p = 0; p < 6 && !walkStop; p++) {
+//       int t[4][3];
+//       buildGaitPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, WALK_HIP_DELTA,
+//                     WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
+//                     seq[p][1]);
+//       moveToTarget(t, speedMs);
+//     }
+//     if (walkStop)
+//       break;
+//     walkStepsDone++;
+//     Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
+//                   (steps == 0) ? -1 : steps);
+//   }
+//   moveToPose(1, 500); // Return to STANDING pose
+//   walkRunning = false;
+//   Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
+//                 variant == 0 ? "Basic" : "Enhanced");
+// }
+
 void walkForward(int steps, int speedMs, int variant) {
   syncGaitBase(); // gait follows the STANDING pose
   walkRunning = true;
@@ -488,16 +529,19 @@ void walkForward(int steps, int speedMs, int variant) {
   for (int l = 0; l < 4; l++)
     femDelta[l] = WALK_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
 
-  // {swingMask, liftMask} for the 6 phases
-  const uint8_t seq[6][2] = {{0, M_FL | M_BR},           // 1: FL&BR femurs lift
-                             {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
-                             {M_FL | M_BR, 0}, // 3: plant FL&BR femurs
-                             {0, M_FR | M_BL}, // 4: FL&BR hips back, FR&BL lift
-                             {M_FR | M_BL, M_FR | M_BL}, // 5: swing FR&BL hips
-                             {M_FR | M_BL, 0}}; // 6: plant FR&BL femurs
+  // {swingMask, liftMask} for the 8 phases
+  const uint8_t seq[8][2] = {
+      {0, M_FL | M_BR},           // 1: FL&BR femurs lift
+      {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
+      {M_FL | M_BR, 0},           // 3: plant FL&BR femurs (down)
+      {0, 0},                     // 4: FL&BR hips back, all feet on ground
+      {0, M_FR | M_BL},           // 5: FR&BL femurs lift (after FL&BR is down)
+      {M_FR | M_BL, M_FR | M_BL}, // 6: swing FR&BL hips
+      {M_FR | M_BL, 0},           // 7: plant FR&BL femurs (down)
+      {0, 0}};                    // 8: FR&BL hips back, all feet on ground
 
   for (int i = 0; i < totalCycles && !walkStop; i++) {
-    for (int p = 0; p < 6 && !walkStop; p++) {
+    for (int p = 0; p < 8 && !walkStop; p++) {
       int t[4][3];
       buildGaitPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, WALK_HIP_DELTA,
                     WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
@@ -594,15 +638,15 @@ void sweepTest() {
 // =============================================================================
 void crawlForward(int steps, int speedMs) {
   syncGaitBase(); // base angles follow the live STANDING pose
-  crawlRunning   = true;
-  crawlStop      = false;
+  crawlRunning = true;
+  crawlStop = false;
   crawlStepsDone = 0;
   int totalCycles = (steps == 0) ? INT_MAX : steps;
 
   // Shorthand base (hip & femur from STANDING, tibia unchanged)
-  const int *hb = WALK_HIP_BASE;    // [FL,FR,BL,BR]
-  const int *fb = WALK_FEM_PLANT;   // plant femur (standing femur + walk offset)
-  const int *tb = GAIT_TIBIA;       // tibia (standing tibia + gait offset)
+  const int *hb = WALK_HIP_BASE;  // [FL,FR,BL,BR]
+  const int *fb = WALK_FEM_PLANT; // plant femur (standing femur + walk offset)
+  const int *tb = GAIT_TIBIA;     // tibia (standing tibia + gait offset)
 
   const int H = CRAWL_HIP_DELTA;
   const int F = CRAWL_FEMUR_DELTA;
@@ -619,109 +663,115 @@ void crawlForward(int steps, int speedMs) {
 
   for (int cycle = 0; cycle < totalCycles && !crawlStop; cycle++) {
 
-    // -- Step 1: FL lift + all hips shift (FL-, FR-, BL+, BR-) simultaneously --
+    // -- Step 1: FL lift + all hips shift (FL-, FR-, BL+, BR-) simultaneously
+    // --
     strncpy(crawlPhaseStr, "1: FL Lift + Hip Shift", sizeof(crawlPhaseStr));
     {
       int t[4][3] = {
-        {constrain(hb[0]-H,0,180), constrain(fb[0]+F,0,180), tb[0]}, // FL lifted, hip fwd
-        {constrain(hb[1]-H,0,180), fb[1],                    tb[1]}, // FR hip shifted
-        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]}, // BL hip shifted
-        {constrain(hb[3]-H,0,180), fb[3],                    tb[3]}  // BR hip shifted
+          {constrain(hb[0] - H, 0, 180), constrain(fb[0] + F, 0, 180),
+           tb[0]},                                      // FL lifted, hip fwd
+          {constrain(hb[1] - H, 0, 180), fb[1], tb[1]}, // FR hip shifted
+          {constrain(hb[2] + H, 0, 180), fb[2], tb[2]}, // BL hip shifted
+          {constrain(hb[3] - H, 0, 180), fb[3], tb[3]}  // BR hip shifted
       };
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 2: FL plant (femur back down, hips stay) --
     strncpy(crawlPhaseStr, "2: FL Plant", sizeof(crawlPhaseStr));
     {
-      int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0], tb[0]}, // FL planted
-        {constrain(hb[1]-H,0,180), fb[1], tb[1]},
-        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
-        {constrain(hb[3]-H,0,180), fb[3], tb[3]}
-      };
+      int t[4][3] = {{constrain(hb[0] - H, 0, 180), fb[0], tb[0]}, // FL planted
+                     {constrain(hb[1] - H, 0, 180), fb[1], tb[1]},
+                     {constrain(hb[2] + H, 0, 180), fb[2], tb[2]},
+                     {constrain(hb[3] - H, 0, 180), fb[3], tb[3]}};
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
-    // -- Step 3: BR lift + BR hip shift back toward neutral (+H from step-2 pos) --
+    // -- Step 3: BR lift + BR hip shift back toward neutral (+H from step-2
+    // pos) --
     strncpy(crawlPhaseStr, "3: BR Lift + Hip Shift", sizeof(crawlPhaseStr));
     {
       int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0],                    tb[0]},
-        {constrain(hb[1]-H,0,180), fb[1],                    tb[1]},
-        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]},
-        {constrain(hb[3]-H+H,0,180), constrain(fb[3]+F,0,180), tb[3]} // BR lifted, hip forward
+          {constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
+          {constrain(hb[1] - H, 0, 180), fb[1], tb[1]},
+          {constrain(hb[2] + H, 0, 180), fb[2], tb[2]},
+          {constrain(hb[3] - H + H, 0, 180), constrain(fb[3] + F, 0, 180),
+           tb[3]} // BR lifted, hip forward
       };
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 4: BR plant --
     strncpy(crawlPhaseStr, "4: BR Plant", sizeof(crawlPhaseStr));
     {
       int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0], tb[0]},
-        {constrain(hb[1]-H,0,180), fb[1], tb[1]},
-        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
-        {hb[3],                    fb[3], tb[3]}  // BR back to base
+          {constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
+          {constrain(hb[1] - H, 0, 180), fb[1], tb[1]},
+          {constrain(hb[2] + H, 0, 180), fb[2], tb[2]},
+          {hb[3], fb[3], tb[3]} // BR back to base
       };
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 5: FR lift + FR hip shift --
     strncpy(crawlPhaseStr, "5: FR Lift + Hip Shift", sizeof(crawlPhaseStr));
     {
-      int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0],                    tb[0]},
-        {constrain(hb[1]-H+H,0,180), constrain(fb[1]-F,0,180), tb[1]}, // FR lifted, hip forward
-        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]},
-        {hb[3],                    fb[3],                    tb[3]}
-      };
+      int t[4][3] = {{constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
+                     {constrain(hb[1] - H + H, 0, 180),
+                      constrain(fb[1] - F, 0, 180),
+                      tb[1]}, // FR lifted, hip forward
+                     {constrain(hb[2] + H, 0, 180), fb[2], tb[2]},
+                     {hb[3], fb[3], tb[3]}};
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 6: FR plant --
     strncpy(crawlPhaseStr, "6: FR Plant", sizeof(crawlPhaseStr));
     {
-      int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0], tb[0]},
-        {hb[1],                    fb[1], tb[1]}, // FR back to base
-        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
-        {hb[3],                    fb[3], tb[3]}
-      };
+      int t[4][3] = {{constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
+                     {hb[1], fb[1], tb[1]}, // FR back to base
+                     {constrain(hb[2] + H, 0, 180), fb[2], tb[2]},
+                     {hb[3], fb[3], tb[3]}};
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 7: BL lift + BL hip shift --
     strncpy(crawlPhaseStr, "7: BL Lift + Hip Shift", sizeof(crawlPhaseStr));
     {
-      int t[4][3] = {
-        {constrain(hb[0]-H,0,180), fb[0],                      tb[0]},
-        {hb[1],                    fb[1],                      tb[1]},
-        {constrain(hb[2]+H-H,0,180), constrain(fb[2]-F,0,180), tb[2]}, // BL lifted, hip forward
-        {hb[3],                    fb[3],                      tb[3]}
-      };
+      int t[4][3] = {{constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
+                     {hb[1], fb[1], tb[1]},
+                     {constrain(hb[2] + H - H, 0, 180),
+                      constrain(fb[2] - F, 0, 180),
+                      tb[2]}, // BL lifted, hip forward
+                     {hb[3], fb[3], tb[3]}};
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     // -- Step 8: BL plant -> cycle end, all hips back to base (STANDING) --
     strncpy(crawlPhaseStr, "8: BL Plant", sizeof(crawlPhaseStr));
     {
-      int t[4][3] = {
-        {hb[0], fb[0], tb[0]}, // FL back to base
-        {hb[1], fb[1], tb[1]},
-        {hb[2], fb[2], tb[2]}, // BL back to base
-        {hb[3], fb[3], tb[3]}
-      };
+      int t[4][3] = {{hb[0], fb[0], tb[0]}, // FL back to base
+                     {hb[1], fb[1], tb[1]},
+                     {hb[2], fb[2], tb[2]}, // BL back to base
+                     {hb[3], fb[3], tb[3]}};
       moveToTarget(t, speedMs);
     }
-    if (crawlStop) break;
+    if (crawlStop)
+      break;
 
     crawlStepsDone++;
     Serial.printf("[CRAWL] Cycle %d/%d completed.\n", crawlStepsDone,
@@ -1017,7 +1067,8 @@ void hCrawl() {
   addCORS();
   if (server.hasArg("stop")) {
     crawlStop = true;
-    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping crawl\"}");
+    server.send(200, "application/json",
+                "{\"ok\":true,\"msg\":\"stopping crawl\"}");
     return;
   }
   if (robotBusy()) {
