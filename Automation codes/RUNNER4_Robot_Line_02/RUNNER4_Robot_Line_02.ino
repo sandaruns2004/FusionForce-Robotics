@@ -157,6 +157,10 @@ const int WALK_FEMUR_TRIM[4] = {0, -10, 0, 0};
 int TURN_HIP_DELTA = 20;   // hip swing, degrees (same on all 4 legs)
 int TURN_FEMUR_DELTA = 20; // femur lift, degrees
 
+// ---- CRAWL (1-leg-at-a-time wave gait) ----
+int CRAWL_HIP_DELTA   = 30; // hip swing per step, degrees
+int CRAWL_FEMUR_DELTA = 15; // femur lift per step, degrees
+
 // ---- Signs and base values (change only if you remount or recalibrate servos)
 // Hip swing direction while walking: FL -, FR +, BL -, BR +
 const int WALK_HIP_SIGN[4] = {-1, +1, -1, +1};
@@ -230,7 +234,8 @@ enum Job : uint8_t {
   JOB_POSE,
   JOB_WALK,
   JOB_TURN,
-  JOB_SWEEP
+  JOB_SWEEP,
+  JOB_CRAWL
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
@@ -246,6 +251,11 @@ volatile bool turnRunning = false, turnStop = false;
 int turnStepsTarget = 0, turnStepsDone = 0;
 char turnDirection[6] = "none";
 char turnPhaseStr[32] = "";
+
+// Crawl state
+volatile bool crawlRunning = false, crawlStop = false;
+int crawlStepsTarget = 0, crawlStepsDone = 0;
+char crawlPhaseStr[32] = "";
 
 // =============================================================================
 // BACKGROUND SERVICE — called from every wait inside motion code
@@ -568,6 +578,162 @@ void sweepTest() {
   Serial.println("[SWEEP] Done.");
 }
 
+// =============================================================================
+// CRAWL GAIT — 1-leg-at-a-time wave gait
+// Uses CRAWL_HIP_DELTA and CRAWL_FEMUR_DELTA (tunable via web or here).
+// All moves are offsets from the STANDING pose (poseAngles[1]).
+// Sequence per cycle (8 sub-steps):
+//   1. FL femur+DELTA  + ALL hips shift (FL-,FR-,BL+,BR-)
+//   2. FL femur-DELTA  (plant FL)
+//   3. BR femur+DELTA  + BR hip+DELTA
+//   4. BR femur-DELTA  (plant BR)
+//   5. FR femur-DELTA  + FR hip+DELTA
+//   6. FR femur+DELTA  (plant FR)
+//   7. BL femur-DELTA  + BL hip-DELTA
+//   8. BL femur+DELTA  (plant BL) -> back to STANDING
+// =============================================================================
+void crawlForward(int steps, int speedMs) {
+  syncGaitBase(); // base angles follow the live STANDING pose
+  crawlRunning   = true;
+  crawlStop      = false;
+  crawlStepsDone = 0;
+  int totalCycles = (steps == 0) ? INT_MAX : steps;
+
+  // Shorthand base (hip & femur from STANDING, tibia unchanged)
+  const int *hb = WALK_HIP_BASE;    // [FL,FR,BL,BR]
+  const int *fb = WALK_FEM_PLANT;   // plant femur (standing femur + walk offset)
+  const int *tb = GAIT_TIBIA;       // tibia (standing tibia + gait offset)
+
+  const int H = CRAWL_HIP_DELTA;
+  const int F = CRAWL_FEMUR_DELTA;
+
+  // Femur lift signs: FL=+1, FR=-1, BL=-1, BR=+1
+  // Hip swing direction used in crawl:
+  //   Step 1 mass-shift: FL-, FR-, BL+, BR-
+  //   Step 3 BR swing  : BR+
+  //   Step 5 FR swing  : FR+
+  //   Step 7 BL swing  : BL-
+
+  Serial.printf("[CRAWL] Starting 1-leg wave gait: %d cycles @ %dms/step\n",
+                steps, speedMs);
+
+  for (int cycle = 0; cycle < totalCycles && !crawlStop; cycle++) {
+
+    // -- Step 1: FL lift + all hips shift (FL-, FR-, BL+, BR-) simultaneously --
+    strncpy(crawlPhaseStr, "1: FL Lift + Hip Shift", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), constrain(fb[0]+F,0,180), tb[0]}, // FL lifted, hip fwd
+        {constrain(hb[1]-H,0,180), fb[1],                    tb[1]}, // FR hip shifted
+        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]}, // BL hip shifted
+        {constrain(hb[3]-H,0,180), fb[3],                    tb[3]}  // BR hip shifted
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 2: FL plant (femur back down, hips stay) --
+    strncpy(crawlPhaseStr, "2: FL Plant", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0], tb[0]}, // FL planted
+        {constrain(hb[1]-H,0,180), fb[1], tb[1]},
+        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
+        {constrain(hb[3]-H,0,180), fb[3], tb[3]}
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 3: BR lift + BR hip shift back toward neutral (+H from step-2 pos) --
+    strncpy(crawlPhaseStr, "3: BR Lift + Hip Shift", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0],                    tb[0]},
+        {constrain(hb[1]-H,0,180), fb[1],                    tb[1]},
+        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]},
+        {constrain(hb[3]-H+H,0,180), constrain(fb[3]+F,0,180), tb[3]} // BR lifted, hip forward
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 4: BR plant --
+    strncpy(crawlPhaseStr, "4: BR Plant", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0], tb[0]},
+        {constrain(hb[1]-H,0,180), fb[1], tb[1]},
+        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
+        {hb[3],                    fb[3], tb[3]}  // BR back to base
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 5: FR lift + FR hip shift --
+    strncpy(crawlPhaseStr, "5: FR Lift + Hip Shift", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0],                    tb[0]},
+        {constrain(hb[1]-H+H,0,180), constrain(fb[1]-F,0,180), tb[1]}, // FR lifted, hip forward
+        {constrain(hb[2]+H,0,180), fb[2],                    tb[2]},
+        {hb[3],                    fb[3],                    tb[3]}
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 6: FR plant --
+    strncpy(crawlPhaseStr, "6: FR Plant", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0], tb[0]},
+        {hb[1],                    fb[1], tb[1]}, // FR back to base
+        {constrain(hb[2]+H,0,180), fb[2], tb[2]},
+        {hb[3],                    fb[3], tb[3]}
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 7: BL lift + BL hip shift --
+    strncpy(crawlPhaseStr, "7: BL Lift + Hip Shift", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {constrain(hb[0]-H,0,180), fb[0],                      tb[0]},
+        {hb[1],                    fb[1],                      tb[1]},
+        {constrain(hb[2]+H-H,0,180), constrain(fb[2]-F,0,180), tb[2]}, // BL lifted, hip forward
+        {hb[3],                    fb[3],                      tb[3]}
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    // -- Step 8: BL plant -> cycle end, all hips back to base (STANDING) --
+    strncpy(crawlPhaseStr, "8: BL Plant", sizeof(crawlPhaseStr));
+    {
+      int t[4][3] = {
+        {hb[0], fb[0], tb[0]}, // FL back to base
+        {hb[1], fb[1], tb[1]},
+        {hb[2], fb[2], tb[2]}, // BL back to base
+        {hb[3], fb[3], tb[3]}
+      };
+      moveToTarget(t, speedMs);
+    }
+    if (crawlStop) break;
+
+    crawlStepsDone++;
+    Serial.printf("[CRAWL] Cycle %d/%d completed.\n", crawlStepsDone,
+                  (steps == 0) ? -1 : steps);
+  }
+
+  strncpy(crawlPhaseStr, "Standing", sizeof(crawlPhaseStr));
+  moveToPose(1, 400); // Return cleanly to STANDING pose
+  crawlRunning = false;
+  Serial.printf("[CRAWL] Gait finished. Total cycles = %d\n", crawlStepsDone);
+}
+
 // Runs one queued job (called from loop only)
 void runPendingJob() {
   if (pendingJob == JOB_NONE)
@@ -595,6 +761,9 @@ void runPendingJob() {
     break;
   case JOB_SWEEP:
     sweepTest();
+    break;
+  case JOB_CRAWL:
+    crawlForward(jobSteps, jobSpeed);
     break;
   default:
     break;
@@ -843,6 +1012,42 @@ void hSweep() {
   pendingJob = JOB_SWEEP;
 }
 
+// GET /crawl?steps=N&speed=X   |   GET /crawl?stop=1
+void hCrawl() {
+  addCORS();
+  if (server.hasArg("stop")) {
+    crawlStop = true;
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping crawl\"}");
+    return;
+  }
+  if (robotBusy()) {
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"busy\"}");
+    return;
+  }
+  int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 4;
+  jobSpeed = server.hasArg("speed")
+                 ? constrain(server.arg("speed").toInt(), 20, 3000)
+                 : 300;
+  jobSteps = crawlStepsTarget = (steps < 0) ? 0 : steps;
+  crawlStepsDone = 0;
+  crawlStop = false;
+  crawlRunning = true;
+  strncpy(crawlPhaseStr, "Starting", sizeof(crawlPhaseStr));
+  Serial.printf("[CRAWL] Queued: steps=%d speed=%dms\n", jobSteps, jobSpeed);
+  server.send(200, "application/json",
+              "{\"ok\":true,\"msg\":\"crawl started\"}");
+  pendingJob = JOB_CRAWL;
+}
+
+// GET /crawlstatus
+void hCrawlStatus() {
+  addCORS();
+  server.send(200, "application/json",
+              String("{\"running\":") + (crawlRunning ? "true" : "false") +
+                  ",\"steps\":" + crawlStepsDone + ",\"target\":" +
+                  crawlStepsTarget + ",\"phase\":\"" + crawlPhaseStr + "\"}");
+}
+
 // =============================================================================
 // SETUP
 // =============================================================================
@@ -902,6 +1107,8 @@ void setup() {
   server.on("/turnright", hTurnRight);
   server.on("/turnstatus", hTurnStatus);
   server.on("/sweep", hSweep);
+  server.on("/crawl", hCrawl);
+  server.on("/crawlstatus", hCrawlStatus);
 
   // Colour sensor module (separate root: /color, /color/...)
   colorBegin(server, AP_SSID, I2C_SDA, I2C_SCL);
