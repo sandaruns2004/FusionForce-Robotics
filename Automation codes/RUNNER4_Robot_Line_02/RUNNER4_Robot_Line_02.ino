@@ -151,7 +151,7 @@ int WALK_FEMUR_DELTA = 25; // femur lift, degrees
 
 // Optional per-leg femur correction. The original code lifted FR by 15, not 25,
 // so FR is -10. Set all four to 0 for an identical lift on every leg.
-const int WALK_FEMUR_TRIM[4] = {0, -10, 0, 0};
+const int WALK_FEMUR_TRIM[4] = {0, 0, 0, 0};
 
 // ---- TURN ----
 int TURN_HIP_DELTA = 20;   // hip swing, degrees (same on all 4 legs)
@@ -170,9 +170,9 @@ const int FEMUR_LIFT_SIGN[4] = {+1, -1, -1, +1};
 // difference between STANDING and the original gait angles, so with the
 // default STANDING angles the gait is exactly the same as before.
 // Leg order: FL, FR, BL, BR
-const int WALK_FEM_OFFSET[4] = {0, -5, +22, -5};
+const int WALK_FEM_OFFSET[4] = {0, 0, 0, 0};
 const int TURN_FEM_OFFSET[4] = {+5, 0, +17, 0};
-const int GAIT_TIB_OFFSET[4] = {0, -1, 0, 0};
+const int GAIT_TIB_OFFSET[4] = {0, 0, 0, 0};
 
 // Filled by syncGaitBase() from poseAngles[1] each time a gait starts
 int WALK_HIP_BASE[4], WALK_FEM_PLANT[4];
