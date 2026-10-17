@@ -751,7 +751,7 @@ void crawlForward(int steps, int speedMs) {
       int t[4][3] = {{constrain(hb[0] - H, 0, 180), fb[0], tb[0]},
                      {hb[1], fb[1], tb[1]},
                      {constrain(hb[2] + H - H, 0, 180),
-                      constrain(fb[2] - F, 0, 180),
+                      constrain(fb[2] + F, 0, 180),
                       tb[2]}, // BL lifted, hip forward
                      {hb[3], fb[3], tb[3]}};
       moveToTarget(t, speedMs);
