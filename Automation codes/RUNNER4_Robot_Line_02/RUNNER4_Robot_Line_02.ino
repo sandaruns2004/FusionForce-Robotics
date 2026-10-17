@@ -491,10 +491,10 @@ void buildGaitPose(int out[4][3], const int hipBase[4], const int hipSign[4],
 //   // {swingMask, liftMask} for the 6 phases
 //   const uint8_t seq[6][2] = {{0, M_FL | M_BR},               // 1: FL&BR
 //   femurs
-//                              lift{M_FL | M_BR, M_FL | M_BR}, // 2: swing
-//                              FL&BR hips{M_FL | M_BR, 0}, // 3: plant FL&BR
-//                              femurs {0, M_FR | M_BL},     // 4: FL&BR hips
-//                              back, FR&BL lift{M_FR | M_BL, M_FR | M_BL}, //
+//                              {M_FL | M_BR, M_FL | M_BR}, // 2: swing
+//                              {M_FL | M_BR, 0}, // 3: plant FL&BR
+//                              {0, M_FR | M_BL},     // 4: FL&BR hips
+//                              {M_FR | M_BL, M_FR | M_BL}, //
 //                              5: swing FR & BL hips{M_FR | M_BL, 0}};  // 6:
 //                              plant FR&BL
 //   femurs
