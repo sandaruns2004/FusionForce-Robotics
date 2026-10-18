@@ -9,6 +9,7 @@ from core import BODY_Z, SENSOR_X, SENSOR_Y, START
 from robot_visuals import body, leg_parts
 
 
+
 def vec(values):
     return ' '.join(f'{v:.8f}' for v in values)
 
@@ -61,7 +62,7 @@ def robot_proto():
     return f'''#VRML_SIM R2025a utf8
 # RUNNER4 demonstration: 100x60 mm chassis; 30/60/80 mm links.
 # Photo-reference rebuild: diagonal black brackets, blade tibias, stacked boards.
-# Reconstructed from photos and CAD screenshots, not imported SolidWorks BREP.
+# Legs use the generated kinematic mechanism; SolidWorks extraction tools are kept separately.
 # All joints are kinematic. No mass or foot-contact dynamics are claimed.
 PROTO Runner4 [
   field SFVec3f translation {START[0]} {START[1]} {BODY_Z}

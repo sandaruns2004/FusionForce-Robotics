@@ -2,7 +2,7 @@
 
 Rebuilt on 19 October 2026 from the user's four photographs of the assembled black robot and the two assembly screenshots extracted from `quadruped-spider-2.snapshot.2 (1).zip`.
 
-The ZIP inventory contains `Base up.SLDPRT`, `Base Down.SLDPRT`, `coxa left.SLDPRT`, `coxa right.SLDPRT`, `Fumer.SLDPRT`, `tibia Left.SLDPRT`, `tibia right.SLDPRT`, `Hold.SLDPRT`, `Servo SG90.SLDPRT`, `SPIDER.SLDASM`, `Assem1.SLDASM`, and two PNG screenshots. No STL, OBJ or STEP exchange meshes were present, and no working SolidWorks converter was found. The native CAD files have not been imported or reverse-engineered; the reconstruction uses the archive's assembly views plus the hardware photographs. Exact CAD fidelity is not claimed.
+The ZIP inventory contains the native SolidWorks parts and assemblies listed above. Optional read-only extraction tools are present, but the active Webots robot intentionally uses the previous generated kinematic mechanism for its legs, as requested. The simulation does not claim editable BREP or exact physical constraints.
 
 | Reference feature | Representation |
 |---|---|

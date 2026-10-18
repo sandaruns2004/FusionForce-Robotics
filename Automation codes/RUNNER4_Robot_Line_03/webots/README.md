@@ -2,7 +2,7 @@
 
 This project contains a four-legged, 12-joint robot on a black arena with a white loop. It uses the active `RUNNER4_Robot_Line_03` design as its reference. Your requested chassis size is approximately **100 mm long × 60 mm wide**. The leg links use the sketch's **30 / 60 / 80 mm** values.
 
-The robot appearance was rebuilt using your four hardware photographs and the assembly screenshots in `quadruped-spider-2.snapshot.2 (1).zip`. It now has diagonal black legs, open paired brackets, curved blade tibias, visible servo housings, stacked boards, a battery/strap, coloured wires and the front IR strip. See [the generated preview](references/robot_preview.png) and [reference notes](references/MODEL_NOTES.md). The archive contains native SolidWorks files; these were not directly converted. This is a visual reconstruction with estimated dimensions.
+The robot appearance was rebuilt using your four hardware photographs and the assembly screenshots in `quadruped-spider-2.snapshot.2 (1).zip`. The active Webots robot uses the previous generated kinematic leg mechanism with diagonal brackets, curved tibia visuals, stacked boards, a battery/strap, coloured wires and the front IR strip. SolidWorks extraction utilities are kept separately for later reference but are not used by the active robot.
 
 **Simulation type:** a sensor-driven kinematic demonstration, as agreed. Nine downward cameras simulate optical reflectance samples. The controller calculates steering from their rendered images. A Supervisor integrates forward speed and yaw into body position, while twelve joint motors animate a diagonal trot. Feet do not propel the body. This does not validate balance, friction, servo torque, weight, or the real robot's gait. The controller does not follow hidden waypoints.
 
@@ -94,6 +94,8 @@ The model has hip, femur, and tibia joints on each leg. Motor angles are radians
 | `controllers/runner4_line/runner4_line.py` | Webots devices, keyboard, display, body motion |
 | `controllers/runner4_line/core.py` | Sensor processing, steering, parameters, gait targets |
 | `tools/build_world.py` | Reproducibly generates the world and robot PROTO |
+| `tools/extract_cad.py` | Optional read-only SolidWorks display-tessellation extraction |
+| `tools/normalize_cad.py` | Optional centering helper for extracted meshes |
 | `tools/robot_visuals.py` | Photo-reference robot meshes, materials and electronics detail |
 | `tools/preview_robot.py` | Optional static preview from the same neutral meshes (requires matplotlib) |
 | `tests/test_controller.py` | Standalone control and asset checks |

@@ -1,7 +1,7 @@
 #VRML_SIM R2025a utf8
 # RUNNER4 demonstration: 100x60 mm chassis; 30/60/80 mm links.
 # Photo-reference rebuild: diagonal black brackets, blade tibias, stacked boards.
-# Reconstructed from photos and CAD screenshots, not imported SolidWorks BREP.
+# Legs use the generated kinematic mechanism; SolidWorks extraction tools are kept separately.
 # All joints are kinematic. No mass or foot-contact dynamics are claimed.
 PROTO Runner4 [
   field SFVec3f translation -0.4 -0.45 0.121

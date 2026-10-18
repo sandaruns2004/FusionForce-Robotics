@@ -1068,6 +1068,11 @@ void setup() {
   server.on("/turnstatus", hTurnStatus);
   server.on("/sweep", hSweep);
 
+  // ── IMPORTANT: Init ToF FIRST so it can vacate I2C address 0x29 ─────────
+  // Both VL53L0X and TCS34725 use 0x29 by default. tofBegin() relocates the
+  // VL53L0X to 0x30 before colorBegin() claims 0x29 for the colour sensor.
+  tofBegin(server, AP_SSID);
+
   // Colour sensor module (separate root: /color, /color/...)
   colorBegin(server, AP_SSID, I2C_SDA, I2C_SCL);
 
@@ -1076,9 +1081,6 @@ void setup() {
 
   // Line-follow module (separate root: /linefollow, /lf/...)
   lineFollowBegin(server, AP_SSID);
-
-  // ToF sensor module (separate root: /tof, /tof/data)
-  tofBegin(server, AP_SSID);
 
   server.begin();
   serverStarted = true;

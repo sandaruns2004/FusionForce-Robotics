@@ -31,6 +31,12 @@
 #define TOF_MEDIAN_WIN        5       // rolling median window size (odd)
 #define TOF_POLL_INTERVAL_MS  40      // min ms between poll() reads (guard)
 
+// VL53L0X is relocated from its boot address (0x29) to this address so the
+// TCS34725 colour sensor can use 0x29 without conflict.
+// MUST match what is used in tofBegin() setAddress() call.
+#define TOF_I2C_ADDR          0x30
+
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -105,20 +111,30 @@ bool  tofOnline()   { return _tofOk;     }
 void tofBegin(WebServer &server, const char *apSsid) {
     // Wire bus (GPIO 11 SDA, GPIO 12 SCL) already started in setup() - do NOT
     // call Wire.begin() here again.
+    //
+    // ADDRESS CONFLICT FIX:
+    //   VL53L0X default address = 0x29 (same as TCS34725 colour sensor).
+    //   We MUST call tofBegin() BEFORE colorBegin() in setup() so the VL53L0X
+    //   is the only device at 0x29. After init we immediately relocate it to
+    //   TOF_I2C_ADDR (0x30), freeing 0x29 for the colour sensor.
     _tofSensor.setTimeout(500);
     if (_tofSensor.init()) {
+        // Relocate VL53L0X from 0x29 → TOF_I2C_ADDR BEFORE colour sensor init.
+        _tofSensor.setAddress(TOF_I2C_ADDR);
         // Fast timing budget — sensor measures autonomously in continuous mode.
         _tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
         // Continuous mode: sensor produces readings on its own.
         // tofPoll() just reads the latest completed result — no blocking.
         _tofSensor.startContinuous();
         _tofOk = true;
-        Serial.println("[TOF] VL53L0X detected at 0x29 - continuous mode ON");
+        Serial.printf("[TOF] VL53L0X detected at 0x29, relocated to 0x%02X - continuous mode ON\n", TOF_I2C_ADDR);
     } else {
         _tofOk = false;
         Serial.println("[TOF] VL53L0X NOT FOUND at 0x29");
         Serial.println("[TOF] Check: SDA=GPIO11, SCL=GPIO12, VIN=3.3V, 4.7k pullups");
+        Serial.println("[TOF] Ensure tofBegin() is called BEFORE colorBegin() in setup()");
     }
+
 
     server.on("/tof", [&server]() {
         server.send_P(200, "text/html", TOF_HTML);
