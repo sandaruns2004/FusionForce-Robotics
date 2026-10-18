@@ -136,6 +136,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <a class="btn btn-line" href="/line">&#128739; Line Array</a>
     <a class="btn btn-line" href="/linefollow" style="background:linear-gradient(135deg,#0f766e,#2dd4bf)">&#129302; Line Follow</a>
     <a class="btn btn-col" href="/color">&#127912; Colour Sensor</a>
+    <a class="btn btn-col" href="/tof" style="background:linear-gradient(135deg,#0e7490,#06b6d4)">&#128225; ToF Sensors</a>
     <a class="btn btn-col" href="/health">System Health</a>
     <button class="btn btn-sw" onclick="doSweep()">&#9654; Sweep</button>
     <button class="btn btn-all" onclick="allHome()">&#8962; All HOME</button>

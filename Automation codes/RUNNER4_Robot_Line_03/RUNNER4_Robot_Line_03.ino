@@ -4,8 +4,10 @@
 // MODULES   : TCS34725 colour sensor (color_sensor.cpp/.h/color_page.h)
 //             9x TCRT5000 line array (line_sensor.cpp/.h/line_page.h)
 //             Line follow (line_follow.h/line_follow_page.h)
+//             3x VL53L0X ToF distance sensors (tof_sensor.h/tof_page.h)
+//             RGB LED status indicator (GPIO 16=Red, 17=Green, 18=Blue)
 // BOARD     : ESP32-S3
-// VERSION   : 6.0  (proportional line following with PD steering)
+// VERSION   : 6.1  (ToF sensors + RGB LED status indicator)
 // =============================================================================
 //
 // WEB ROUTES (one WiFi AP, one web server)
@@ -13,9 +15,11 @@
 //   http://192.168.4.1/color       -> colour sensor lab
 //   http://192.168.4.1/line        -> 9-ch line array lab
 //   http://192.168.4.1/linefollow  -> line-follow tuning & test lab
+//   http://192.168.4.1/tof         -> ToF distance sensor lab  (NEW)
 //   /color/data /color/config /color/set /color/cmd /color/wifi /color/export
 //   /line/data  /line/config  /line/set  /line/cmd  /line/wifi  /line/export
 //   /lf/start   /lf/stop      /lf/status /lf/config /lf/set     /lf/cmd
+//   /tof/data
 //
 // SKETCH FOLDER (ALL files in ONE folder named RUNNER4_Robot_Line):
 //   RUNNER4_Robot_Line.ino     <- this file (robot)
@@ -69,6 +73,9 @@
 #include "line_sensor.h"  // line array module API
 #include "robot_page.h"   // INDEX_HTML
 
+// ToF sensor module (header-only implementation)
+#define TOF_IMPLEMENTATION
+#include "tof_sensor.h" // 3x VL53L0X + /tof web page
 
 struct Vec3f {
   float x, y, z;
@@ -78,10 +85,42 @@ struct Vec3f {
 const char *AP_SSID = "RUNNER4-Config";
 const char *AP_PASS = "runner4robot";
 
-// ── I2C (shared by PCA9685 and TCS34725) ─────────────────────────────────────
+// ── I2C (shared by PCA9685, TCS34725, and VL53L0X sensors) ──────────────────
 #define I2C_SDA 11
 #define I2C_SCL 12
 #define I2C_HZ 400000
+
+// ── RGB LED (common-cathode: HIGH = ON)
+// ─────────────────────────────────────── Wiring: GPIO -> 330ohm resistor ->
+// LED leg -> GND (common cathode)
+constexpr uint8_t RGB_RED_PIN = 16;
+constexpr uint8_t RGB_GREEN_PIN = 17;
+constexpr uint8_t RGB_BLUE_PIN = 18;
+
+void setRgb(bool red, bool green, bool blue) {
+  digitalWrite(RGB_RED_PIN, red ? HIGH : LOW);
+  digitalWrite(RGB_GREEN_PIN, green ? HIGH : LOW);
+  digitalWrite(RGB_BLUE_PIN, blue ? HIGH : LOW);
+}
+
+// Update RGB LED to match confirmed colour from TCS34725
+void updateColorLed() {
+  uint8_t col = colorConfirmed();
+  switch (col) {
+  case COLOR_ID_RED:
+    setRgb(true, false, false);
+    break; // RED   on
+  case COLOR_ID_GREEN:
+    setRgb(false, true, false);
+    break; // GREEN on
+  case COLOR_ID_BLUE:
+    setRgb(false, false, true);
+    break; // BLUE  on
+  default:
+    setRgb(false, false, false);
+    break; // off (unknown)
+  }
+}
 
 // ── PCA9685 ──────────────────────────────────────────────────────────────────
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
@@ -262,11 +301,30 @@ char lfPhaseStr[48] = "";
 // =============================================================================
 // BACKGROUND SERVICE — called from every wait inside motion code
 // =============================================================================
+// Rate-limit server.handleClient() to at most once per WEB_SERVE_INTERVAL_MS.
+// Previously it was called on every servo step (up to 180 times per
+// moveToTarget call), which caused 20-50 ms HTTP processing to stall motion.
+#define WEB_SERVE_INTERVAL_MS 20   // serve HTTP at most every 20 ms
+#define LED_UPDATE_INTERVAL_MS 50  // update RGB LED at most every 50 ms
+
+static uint32_t _lastServeMs  = 0;
+static uint32_t _lastLedMs    = 0;
+
 void serviceBackground() {
-  if (serverStarted)
+  uint32_t now = millis();
+  // Throttled HTTP serving — prevents motion stutter from HTTP processing
+  if (serverStarted && (now - _lastServeMs >= WEB_SERVE_INTERVAL_MS)) {
     server.handleClient();
+    _lastServeMs = millis(); // re-read after handleClient (it may take time)
+  }
   colorPoll();
+  // Rate-limit LED GPIO writes (no need to toggle LEDs at kHz speeds)
+  if (now - _lastLedMs >= LED_UPDATE_INTERVAL_MS) {
+    updateColorLed();
+    _lastLedMs = now;
+  }
   linePoll();
+  tofPoll(); // non-blocking ToF (continuous mode)
 }
 
 // Wait ms while keeping WiFi + colour sensor + line array alive
@@ -274,9 +332,11 @@ void waitMs(uint32_t ms) {
   uint32_t t0 = millis();
   do {
     serviceBackground();
-    if (millis() - t0 >= ms)
-      break;
-    delay(1);
+    uint32_t elapsed = millis() - t0;
+    if (elapsed >= ms) break;
+    // Small sleep only if we have more than 1ms left, avoids busy-spin
+    uint32_t remaining = ms - elapsed;
+    if (remaining > 1) delay(1);
   } while (true);
 }
 
@@ -309,49 +369,62 @@ void setLegHome(int leg) {
 }
 
 // Linear interpolation of all 12 servos over speedMs (0 = instant)
+//
+// PERFORMANCE FIX: Previously iterated once per degree of max travel (up to
+// 180 steps) and called waitMs() / serviceBackground() every step, causing
+// HTTP requests to stall the motion.  Now:
+//  - Instant mode (speedMs==0): writes all servos at once, ONE serviceBackground
+//    call at the end to keep sensors alive.
+//  - Timed mode: uses a fixed number of interpolation steps (max 30) capped at
+//    one step per ~speedMs/30 ms, so server.handleClient() runs at most ~30
+//    times per phase instead of 180.
 void moveToTarget(const int targetAngles[4][3], int speedMs) {
   if (speedMs <= 0) {
-    for (int leg = 0; leg < 4; leg++) {
-      for (int joint = 0; joint < 3; joint++) {
+    // Instant: write all 12 servos immediately, no per-joint delay
+    for (int leg = 0; leg < 4; leg++)
+      for (int joint = 0; joint < 3; joint++)
         setServo(legChannels[leg][joint], targetAngles[leg][joint]);
-        waitMs(8);
-      }
-    }
+    serviceBackground(); // single background tick after all writes
     return;
   }
+
+  // Compute max angular travel to decide number of steps
   int maxDiff = 0;
   for (int leg = 0; leg < 4; leg++)
     for (int joint = 0; joint < 3; joint++) {
-      int diff =
-          abs(targetAngles[leg][joint] - servoAngles[legChannels[leg][joint]]);
-      if (diff > maxDiff)
-        maxDiff = diff;
+      int diff = abs(targetAngles[leg][joint] -
+                     servoAngles[legChannels[leg][joint]]);
+      if (diff > maxDiff) maxDiff = diff;
     }
-  if (maxDiff == 0)
-    return;
+  if (maxDiff == 0) return;
+
+  // Cap interpolation steps: no more than 30 (was up to 180).
+  // Each step is at least speedMs/30 ms apart, so motion time is preserved.
+  const int MAX_STEPS = 30;
+  int nSteps = (maxDiff < MAX_STEPS) ? maxDiff : MAX_STEPS;
 
   int startAngles[16];
   memcpy(startAngles, servoAngles, sizeof(servoAngles));
   unsigned long moveStart = millis();
-  for (int step = 1; step <= maxDiff; step++) {
-    float t = (float)step / (float)maxDiff;
+
+  for (int step = 1; step <= nSteps; step++) {
+    float t = (float)step / (float)nSteps;
     for (int leg = 0; leg < 4; leg++)
       for (int joint = 0; joint < 3; joint++) {
         uint8_t ch = legChannels[leg][joint];
         setServo(ch, startAngles[ch] +
-                         (int)roundf(
-                             t * (targetAngles[leg][joint] - startAngles[ch])));
+                         (int)roundf(t * (targetAngles[leg][joint] -
+                                         startAngles[ch])));
       }
+    // Wait until this step's scheduled time, running background tasks
     unsigned long stepTarget =
-        moveStart + (unsigned long)((long)speedMs * step / maxDiff);
+        moveStart + (unsigned long)((long)speedMs * step / nSteps);
     unsigned long now = millis();
     if (stepTarget > now)
       waitMs(stepTarget - now);
     else
       serviceBackground();
   }
-  Serial.printf("[POSE] Transition done. Steps=%d, duration=%lums\n", maxDiff,
-                millis() - moveStart);
 }
 
 void moveToPose(int id, int speedMs) {
@@ -568,21 +641,21 @@ void walkForward(int steps, int speedMs, int variant) {
 //                 turnStepsDone);
 // }
 
-// void sweepTest() {
-//   Serial.println("[SWEEP] BR FEMUR (CH8): 0 -> 90 -> 0");
-//   for (int a = 0; a <= 90; a++) {
-//     setServo(BR_FEMUR, a);
-//     waitMs(15);
-//   }
-//   waitMs(200);
-//   for (int a = 90; a >= 0; a--) {
-//     setServo(BR_FEMUR, a);
-//     waitMs(15);
-//   }
-//   waitMs(200);
-//   setLegHome(3);
-//   Serial.println("[SWEEP] Done.");
-// }
+void sweepTest() {
+  Serial.println("[SWEEP] BR FEMUR (CH8): 0 -> 90 -> 0");
+  for (int a = 0; a <= 90; a++) {
+    setServo(BR_FEMUR, a);
+    waitMs(15);
+  }
+  waitMs(200);
+  for (int a = 90; a >= 0; a--) {
+    setServo(BR_FEMUR, a);
+    waitMs(15);
+  }
+  waitMs(200);
+  setLegHome(3);
+  Serial.println("[SWEEP] Done.");
+}
 
 // =============================================================================
 // TURN GAIT (uses TURN_HIP_DELTA and TURN_FEMUR_DELTA)
@@ -940,9 +1013,18 @@ void setup() {
                 bootResetReason == ESP_RST_BROWNOUT ? " (BROWNOUT)" : "");
 
   Serial.println("\n=============================================");
-  Serial.println("  FusionForce RUNNER4 v6.0 — ESP32-S3");
-  Serial.println("  Robot + Colour + Line + LineFollow");
+  Serial.println("  FusionForce RUNNER4 v6.1 — ESP32-S3");
+  Serial.println("  Robot + Colour + Line + LineFollow + ToF");
   Serial.println("=============================================");
+
+  // ── RGB LED init (GPIO 16=R, 17=G, 18=B, common-cathode) ─────────────────
+  pinMode(RGB_RED_PIN, OUTPUT);
+  digitalWrite(RGB_RED_PIN, LOW);
+  pinMode(RGB_GREEN_PIN, OUTPUT);
+  digitalWrite(RGB_GREEN_PIN, LOW);
+  pinMode(RGB_BLUE_PIN, OUTPUT);
+  digitalWrite(RGB_BLUE_PIN, LOW);
+  Serial.println("[RGB] LED pins initialised (GPIO 16/17/18).");
 
   // One shared I2C bus (GPIO 11/12 — GPIO 8/9 are line-array ADC inputs)
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -995,18 +1077,25 @@ void setup() {
   // Line-follow module (separate root: /linefollow, /lf/...)
   lineFollowBegin(server, AP_SSID);
 
+  // ToF sensor module (separate root: /tof, /tof/data)
+  tofBegin(server, AP_SSID);
+
   server.begin();
   serverStarted = true;
-  Serial.println("HTTP server running.  Robot: /   Colour: /color   Line: "
-                 "/line   LineFollow: /linefollow\n");
+  Serial.println("HTTP server running.");
+  Serial.println("  Robot:      http://192.168.4.1/");
+  Serial.println("  Colour:     http://192.168.4.1/color");
+  Serial.println("  Line:       http://192.168.4.1/line");
+  Serial.println("  LineFollow: http://192.168.4.1/linefollow");
+  Serial.println("  ToF:        http://192.168.4.1/tof");
 }
 
 // =============================================================================
 // LOOP
 // =============================================================================
 void loop() {
-  server.handleClient();
-  colorPoll();
-  linePoll();
+  // Use serviceBackground() to benefit from the same rate-limiting as motion
+  // (avoids duplicate handleClient / LED update calls).
+  serviceBackground();
   runPendingJob();
 }

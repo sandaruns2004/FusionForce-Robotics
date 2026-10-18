@@ -1,95 +1,318 @@
-# RUNNER4 ESP32-S3 pin map and four-pin RGB LED
+# RUNNER4 ESP32-S3 Complete Pinout & Wiring Map
 
-This map is for the active `RUNNER4_Robot_Line` ESP32-S3 sketch. The STM32 pin maps elsewhere in the repository describe a different proposed controller. Verify that GPIO16, GPIO17, and GPIO18 are broken out on the exact ESP32-S3 board before wiring them.
+This document defines the complete hardware pin allocation for the **RUNNER4 Quadruped Robot** running on the **ESP32-S3** controller (`RUNNER4_Robot_Line_03`).
 
-## GPIOs currently assigned by the sketch
+It covers:
+1. **9-channel TCRT5000 line sensor array** (ADC1 only — WiFi safe)
+2. **Shared I2C bus** (PCA9685 servo driver, TCS34725 colour sensor, and 3× VL53L0X ToF sensors)
+3. **3× VL53L0X ToF distance sensors & XSHUT address remapping**
+4. **TCS34725 color sensor LED control**
+5. **4-pin status RGB LED** (common cathode)
+6. **3× Hardware pushbuttons** (GPIO 38, 39, 40 with internal pull-up)
+7. **Full ESP32-S3 DevKit header pinout diagram**
 
-| ESP32-S3 GPIO | Current connection | Defined in |
-| --- | --- | --- |
-| 1 | Line sensor S1 (far left), analog | `line_sensor.h` |
-| 2 | Line sensor S2, analog | `line_sensor.h` |
-| 4 | Line sensor S3, analog | `line_sensor.h` |
-| 5 | Line sensor S4, analog | `line_sensor.h` |
-| 6 | Line sensor S5 (center), analog | `line_sensor.h` |
-| 7 | Line sensor S6, analog | `line_sensor.h` |
-| 8 | Line sensor S7, analog | `line_sensor.h` |
-| 9 | Line sensor S8, analog | `line_sensor.h` |
-| 10 | Line sensor S9 (far right), analog | `line_sensor.h` |
-| 11 | I2C SDA, shared by PCA9685 and TCS34725 | `RUNNER4_Robot_Line.ino` |
-| 12 | I2C SCL, shared by PCA9685 and TCS34725 | `RUNNER4_Robot_Line.ino` |
-| 15 | TCS34725 illuminator control, high means on | `color_sensor.h` |
+---
 
-The 12 leg servos connect to **PCA9685 channels**, not to 12 more ESP32 GPIOs. The current sketch does not assign GPIOs to an IMU or wall-distance sensors.
+## 1. Master GPIO Assignment Table
 
-## Proposed pins for the common-cathode RGB LED
+| ESP32-S3 GPIO | Function / Signal | Hardware Component | Mode / Type | Notes |
+| :---: | :--- | :--- | :---: | :--- |
+| **1** | Line S1 (Far Right / Rightmost) | 9× TCRT5000 Array | Analog In | ADC1_CH0 (WiFi AP safe) |
+| **2** | Line S2 | 9× TCRT5000 Array | Analog In | ADC1_CH1 (WiFi AP safe) |
+| **4** | Line S3 | 9× TCRT5000 Array | Analog In | ADC1_CH3 (WiFi AP safe) |
+| **5** | Line S4 | 9× TCRT5000 Array | Analog In | ADC1_CH4 (WiFi AP safe) |
+| **6** | Line S5 (Center) | 9× TCRT5000 Array | Analog In | ADC1_CH5 (WiFi AP safe) |
+| **7** | Line S6 | 9× TCRT5000 Array | Analog In | ADC1_CH6 (WiFi AP safe) |
+| **8** | Line S7 | 9× TCRT5000 Array | Analog In | ADC1_CH7 (WiFi AP safe) |
+| **9** | Line S8 | 9× TCRT5000 Array | Analog In | ADC1_CH8 (WiFi AP safe) |
+| **10** | Line S9 (Far Left / Leftmost) | 9× TCRT5000 Array | Analog In | ADC1_CH9 (WiFi AP safe) |
+| **11** | I2C SDA | PCA9685 + TCS34725 + 3× VL53L0X | I2C Data | 4.7kΩ pull-up to 3.3V |
+| **12** | I2C SCL | PCA9685 + TCS34725 + 3× VL53L0X | I2C Clock | 4.7kΩ pull-up to 3.3V, 400kHz |
+| **13** | **VL53L0X Front XSHUT** | Front Wall / Obstacle ToF | Digital Out | Active LOW reset / boot remap |
+| **14** | **VL53L0X Right XSHUT** | Right Wall Distance ToF | Digital Out | Active LOW reset / boot remap |
+| **21** | **VL53L0X Left XSHUT** | Left Wall Distance ToF | Digital Out | Active LOW reset / boot remap |
+| **15** | TCS34725 LED Control | TCS34725 Colour Sensor | Digital Out | HIGH = white LED on, LOW = off |
+| **16** | Status LED — Red | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
+| **17** | Status LED — Green | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
+| **18** | Status LED — Blue | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
+| **38** | **Button 1 (SW1)** | Pushbutton (e.g. Start / Stop) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
+| **39** | **Button 2 (SW2)** | Pushbutton (e.g. Calibrate / Stand) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
+| **40** | **Button 3 (SW3)** | Pushbutton (e.g. Mode / Home) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
 
-| RGB color leg | ESP32-S3 GPIO | Connection |
-| --- | --- | --- |
-| Red | 16 | GPIO16 -> 330 ohm resistor -> RGB red leg |
-| Green | 17 | GPIO17 -> 330 ohm resistor -> RGB green leg |
-| Blue | 18 | GPIO18 -> 330 ohm resistor -> RGB blue leg |
-| Common cathode | — | RGB common leg -> GND |
+> [!IMPORTANT]
+> **ADC1 vs ADC2 Constraint:**
+> On ESP32-S3, **ADC2 (GPIO 11–20) cannot be used for analog reads when WiFi is active**.
+> All 9 analog line sensors are strictly placed on **ADC1 (GPIO 1–10)**.
+> GPIO 13, 14, 15, 16, 17, 18 are purely digital outputs, so WiFi does not interfere with them.
 
-The package contains three LED elements sharing one cathode. **Each color leg needs its own resistor.** These pins are digital outputs even though they also have ADC2 functions. The proposed LED pins do not conflict with any pin assigned in the current sketch. GPIO15 already controls the color sensor's illuminator; it is not part of this RGB LED.
+---
 
-Do not connect a color leg directly to a GPIO or connect 5 V to a GPIO. Use the GPIO's 3.3 V logic output and ground. The **physical order of R, common, G, and B legs depends on the RGB LED model**; identify them from its datasheet or test them with a resistor before soldering. Do not assume the longest leg or a particular left-to-right order without checking.
+## 2. Shared I2C Bus & Address Map
 
-## Code to add after choosing what the LEDs mean
+All five I2C devices share the same single bus (**SDA: GPIO 11**, **SCL: GPIO 12**).
 
-Near the other pin definitions in `RUNNER4_Robot_Line.ino`:
+| Device | Default Boot Address | Runtime Address | How Address Is Set |
+| :--- | :---: | :---: | :--- |
+| **PCA9685** (12 Servo Driver) | `0x40` | **`0x40`** | Hardware address pins A0–A5 grounded |
+| **TCS34725** (Colour Sensor) | `0x29` | **`0x29`** | Fixed factory address |
+| **VL53L0X Front ToF** | `0x29` | **`0x30`** | Remapped at boot via **GPIO 13** XSHUT |
+| **VL53L0X Left ToF** | `0x29` | **`0x31`** | Remapped at boot via **GPIO 21** XSHUT |
+| **VL53L0X Right ToF** | `0x29` | **`0x32`** | Remapped at boot via **GPIO 14** XSHUT |
+
+### Why XSHUT Is Required
+The VL53L0X sensor boots at factory address `0x29`. The TCS34725 color sensor **also** sits permanently at `0x29`. Without XSHUT control, all three VL53L0X sensors and the TCS34725 would collide on `0x29`, crashing the entire I2C bus.
+
+---
+
+## 3. 3× VL53L0X Distance Sensors & XSHUT Wiring
+
+### Sensor Wiring
+
+| VL53L0X Pin | Connects To | Notes |
+| :--- | :--- | :--- |
+| **VIN** | ESP32 **3.3V** | Never connect to 5V |
+| **GND** | Common **GND** | Must share ground with ESP32 |
+| **SDA** | **GPIO 11** | Shared I2C SDA bus line |
+| **SCL** | **GPIO 12** | Shared I2C SCL bus line |
+| **XSHUT (Front)** | **GPIO 13** | Dedicated shutdown line |
+| **XSHUT (Left)** | **GPIO 21** | Dedicated shutdown line |
+| **XSHUT (Right)** | **GPIO 14** | Dedicated shutdown line |
+| **GPIO1 (Interrupt)** | *Leave unconnected* | Not needed for polling |
+
+### Sequential Boot & Address Remap Code
+
+At power-up, all three XSHUT lines are pulled LOW (sensors kept off). Each sensor is then awakened one at a time, assigned its new I2C address, and kept active:
+
+```cpp
+#include <Wire.h>
+#include <VL53L0X.h>
+
+constexpr uint8_t XSHUT_FRONT = 13;
+constexpr uint8_t XSHUT_LEFT  = 21;
+constexpr uint8_t XSHUT_RIGHT = 14;
+
+VL53L0X tofFront;
+VL53L0X tofLeft;
+VL53L0X tofRight;
+
+void initToFSensors() {
+  // Step 1: Put all 3 sensors into reset
+  pinMode(XSHUT_FRONT, OUTPUT);
+  pinMode(XSHUT_LEFT,  OUTPUT);
+  pinMode(XSHUT_RIGHT, OUTPUT);
+  digitalWrite(XSHUT_FRONT, LOW);
+  digitalWrite(XSHUT_LEFT,  LOW);
+  digitalWrite(XSHUT_RIGHT, LOW);
+  delay(10);
+
+  // Step 2: Boot & remap Front sensor
+  digitalWrite(XSHUT_FRONT, HIGH);
+  delay(10);
+  tofFront.setTimeout(500);
+  if (tofFront.init()) {
+    tofFront.setAddress(0x30);  // Remapped to 0x30
+    Serial.println("[ToF] Front online at 0x30");
+  }
+
+  // Step 3: Boot & remap Left sensor
+  digitalWrite(XSHUT_LEFT, HIGH);
+  delay(10);
+  tofLeft.setTimeout(500);
+  if (tofLeft.init()) {
+    tofLeft.setAddress(0x31);   // Remapped to 0x31
+    Serial.println("[ToF] Left online at 0x31");
+  }
+
+  // Step 4: Boot & remap Right sensor
+  digitalWrite(XSHUT_RIGHT, HIGH);
+  delay(10);
+  tofRight.setTimeout(500);
+  if (tofRight.init()) {
+    tofRight.setAddress(0x32);  // Remapped to 0x32
+    Serial.println("[ToF] Right online at 0x32");
+  }
+}
+```
+
+---
+
+## 4. Full ESP32-S3 DevKit Header Pin Diagram
+
+Visual layout of the ESP32-S3 DevKit (44-pin board):
+
+```
+                       ┌───────────────────────┐
+                       │      ESP32-S3         │
+                       │     (USB at top)      │
+                       └───────────────────────┘
+          [LEFT HEADER]                         [RIGHT HEADER]
+  3.3V Logic ────────── 3V3                 GND ────────── Common Ground
+  3.3V Logic ────────── 3V3                GPIO43 ──────── (UART0 TX)
+  Board Reset ───────── EN                 GPIO44 ──────── (UART0 RX)
+  Line S3 (ADC1) ────── GPIO4               GPIO1 ──────── Line S1 (ADC1)
+  Line S4 (ADC1) ────── GPIO5               GPIO2 ──────── Line S2 (ADC1)
+  Line S5 Center ────── GPIO6              GPIO42 ──────── [Free GPIO]
+  Line S6 (ADC1) ────── GPIO7              GPIO41 ──────── [Free GPIO]
+  TCS LED Ctrl ──────── GPIO15             GPIO40 ──────── Button 3 (INPUT_PULLUP)
+  Status LED Red ────── GPIO16             GPIO39 ──────── Button 2 (INPUT_PULLUP)
+  Status LED Green ──── GPIO17             GPIO38 ──────── Button 1 (INPUT_PULLUP)
+  Status LED Blue ───── GPIO18             GPIO37 ──────── (SPI/PSRAM)
+  Line S7 (ADC1) ────── GPIO8              GPIO36 ──────── (SPI/PSRAM)
+  USB D- (Native) ───── GPIO19             GPIO35 ──────── (SPI/PSRAM)
+  USB D+ (Native) ───── GPIO20              GPIO0 ──────── (Strapping / Boot)
+  (Strapping) ───────── GPIO3              GPIO45 ──────── (Strapping)
+  (Strapping) ───────── GPIO46             GPIO48 ──────── (Onboard RGB)
+  Line S8 (ADC1) ────── GPIO9              GPIO47 ──────── [Free GPIO]
+  Line S9 (ADC1) ────── GPIO10             GPIO21 ──────── ToF Left XSHUT
+  I2C SDA ───────────── GPIO11              20/19 ──────── (USB D+/D-)
+  I2C SCL ───────────── GPIO12               GND  ──────── Common Ground
+  ToF Front XSHUT ───── GPIO13               5V   ──────── 5V Reg In / VBUS
+  ToF Right XSHUT ───── GPIO14               GND  ──────── Common Ground
+                       └───────────────────────┘
+```
+
+---
+
+## 5. 4-Pin Common-Cathode Status RGB LED
+
+### Wiring Details
+
+| LED Leg | Connects to ESP32-S3 | Resistor | Description |
+| :--- | :--- | :---: | :--- |
+| **Red Leg** | **GPIO 16** | 330 Ω | Active HIGH |
+| **Common Cathode** | **GND** | *Direct* | Shared negative return |
+| **Green Leg** | **GPIO 17** | 330 Ω | Active HIGH |
+| **Blue Leg** | **GPIO 18** | 330 Ω | Active HIGH |
+
+> **Warning:** Never connect an LED leg directly to a GPIO without a current-limiting resistor (330 Ω recommended).
+
+### Helper Code
 
 ```cpp
 constexpr uint8_t RGB_RED_PIN   = 16;
 constexpr uint8_t RGB_GREEN_PIN = 17;
 constexpr uint8_t RGB_BLUE_PIN  = 18;
-```
 
-In the existing `setup()` function:
-
-```cpp
-pinMode(RGB_RED_PIN, OUTPUT);
-pinMode(RGB_GREEN_PIN, OUTPUT);
-pinMode(RGB_BLUE_PIN, OUTPUT);
-digitalWrite(RGB_RED_PIN, LOW);
-digitalWrite(RGB_GREEN_PIN, LOW);
-digitalWrite(RGB_BLUE_PIN, LOW);
-```
-
-For a common-cathode RGB LED, `HIGH` turns that color on and `LOW` turns it off. This helper can be added to the sketch:
-
-```cpp
 void setRgb(bool red, bool green, bool blue) {
   digitalWrite(RGB_RED_PIN,   red   ? HIGH : LOW);
   digitalWrite(RGB_GREEN_PIN, green ? HIGH : LOW);
   digitalWrite(RGB_BLUE_PIN,  blue  ? HIGH : LOW);
 }
 
-setRgb(true,  false, false); // red
-setRgb(false, true,  false); // green
-setRgb(false, false, true);  // blue
-setRgb(true,  true,  false); // yellow (red + green)
-setRgb(false, false, false); // off
+// Common status presets:
+// setRgb(false, false, false); // OFF
+// setRgb(true,  false, false); // RED: Error / Line Lost
+// setRgb(false, true,  false); // GREEN: Ready / Tracking Line
+// setRgb(false, false, true);  // BLUE: Calibrating / Web Access
+// setRgb(true,  true,  false); // YELLOW: Obstacle / Caution
+// setRgb(true,  false, true);  // MAGENTA: Walking Gait
 ```
 
-The `setRgb(...)` calls above are examples; put them inside an existing function rather than at file scope. The current firmware does not yet initialize or control GPIO16–18, because the intended status meanings of the colors have not been specified.
+---
 
-## Power connections to verify
+## 6. 3× Hardware Pushbuttons Wiring & Code
 
-| Connection | Destination |
-| --- | --- |
-| Servo regulator output, within the MG90 supply rating | PCA9685 `V+` servo-power terminal |
-| ESP32-S3 board 3V3 | PCA9685 `VCC` logic pin and 3.3 V sensors, subject to regulator capacity |
-| Common ground | ESP32, PCA9685, sensors, and both regulators |
-| Logic regulator output | ESP32 board's specified `5V`/`VIN` input if the board supports it |
+### Recommended Pin Selection: **GPIO 38, GPIO 39, GPIO 40**
+- **Why these pins?**
+  - Adjacent, consecutive pins grouped on the DevKit right header.
+  - 100% free digital GPIOs with internal pull-up and pull-down support.
+  - Completely independent of boot strapping pins (0, 3, 45, 46) and native USB (19, 20).
+  - Safe for active-LOW switches: **no external resistors needed** (`pinMode(pin, INPUT_PULLUP)`).
+  - *(If a 4th button or toggle switch is ever added, **GPIO 41** or **GPIO 42** right next to them can be used).*
 
-The PCA9685 `VCC` and `V+` pins serve different purposes. Do not feed 5 V into the ESP32's `3V3` pin. Follow the exact development board's power-input markings.
+### Hardware Wiring (Active-LOW to GND)
 
-## Pins deliberately avoided for these LEDs
+Each tactile button has 2 terminals (connect one terminal to the GPIO, the other to common GND):
 
-- GPIO0, GPIO3, GPIO45, GPIO46: boot strapping pins.
-- GPIO19, GPIO20: native USB connections.
-- GPIO26–32: commonly used by flash/PSRAM.
-- GPIO33–37: may be used by octal flash/PSRAM, depending on module.
-- GPIO43, GPIO44: commonly used for UART serial.
-- GPIO48: onboard RGB LED on some ESP32-S3 development boards.
+```
+  ESP32-S3 GPIO 38 ───────┐
+                          │   [ Button 1 / SW1 ]
+  ESP32-S3 GND     ───────┴───◯                ◯───┐
+                                                   │
+  ESP32-S3 GPIO 39 ───────┐                        │
+                          │   [ Button 2 / SW2 ]   │
+  ESP32-S3 GND     ───────┴───◯                ◯───┼───► Common GND
+                                                   │
+  ESP32-S3 GPIO 40 ───────┐                        │
+                          │   [ Button 3 / SW3 ]   │
+  ESP32-S3 GND     ───────┴───◯                ◯───┘
+```
+- **Idle (Not Pressed)**: Internal pull-up holds the GPIO input at **HIGH** (3.3V).
+- **Pressed**: Switch connects GPIO directly to GND, reading **LOW** (0V).
 
+### Firmware Implementation & Debounce Example
+
+```cpp
+constexpr uint8_t BTN_PIN_1 = 38; // e.g. Start / Stop Line Follow or Walk
+constexpr uint8_t BTN_PIN_2 = 39; // e.g. Return to STANDING pose
+constexpr uint8_t BTN_PIN_3 = 40; // e.g. Start Line Sensor Calibration sweep
+
+void initButtons() {
+  pinMode(BTN_PIN_1, INPUT_PULLUP);
+  pinMode(BTN_PIN_2, INPUT_PULLUP);
+  pinMode(BTN_PIN_3, INPUT_PULLUP);
+}
+
+// Non-blocking button press detector with 200ms debounce
+bool isButtonPressed(uint8_t pin) {
+  static unsigned long lastPressTime[3] = {0, 0, 0};
+  uint8_t idx = (pin == BTN_PIN_1) ? 0 : (pin == BTN_PIN_2) ? 1 : 2;
+
+  if (digitalRead(pin) == LOW) {
+    if (millis() - lastPressTime[idx] > 200) {
+      lastPressTime[idx] = millis();
+      return true;
+    }
+  }
+  return false;
+}
+
+// Example usage inside loop():
+// if (isButtonPressed(BTN_PIN_1)) {
+//   Serial.println("[BTN1] Toggle Walk / Line Follow");
+// }
+// if (isButtonPressed(BTN_PIN_2)) {
+//   Serial.println("[BTN2] Move to STANDING pose");
+//   moveToPose(1, 500);
+// }
+// if (isButtonPressed(BTN_PIN_3)) {
+//   Serial.println("[BTN3] Start Line Cal sweep");
+// }
+```
+
+---
+
+## 7. Power Distribution Architecture
+
+```
+[2S LiPo Battery: 7.4V - 8.4V]
+       │
+       ├──► [6V 5A-8A High-Current BEC / Buck] ────► PCA9685 V+ (Servos ONLY)
+       │                                              (Powers 12× MG90 Servos)
+       │
+       └──► [5V 2A-3A Logic Buck Regulator] ───────► ESP32-S3 5V / VIN pin
+                                                       │
+                                                       ▼ [ESP32 Onboard 3.3V LDO]
+                                                       ├─► 3.3V: 9× TCRT5000 Line Array
+                                                       ├─► 3.3V: TCS34725 Colour Sensor
+                                                       ├─► 3.3V: 3× VL53L0X ToF Sensors
+                                                       └─► 3.3V: PCA9685 VCC (Logic)
+```
+
+> [!CAUTION]
+> **Ground Isolation / Ground Loops:**
+> All grounds (Battery (-), 6V BEC GND, 5V Logic GND, ESP32 GND, and PCA9685 GND) must be tied together into a **single common ground point**.
+> **NEVER** power servos from the ESP32 3.3V pin or ESP32 5V pin.
+
+---
+
+## 8. Reserved & Strapping Pins (Do Not Wire)
+
+| Pin | Reason to Avoid |
+| :--- | :--- |
+| **GPIO 0, 3, 45, 46** | Boot mode strapping pins; external pull up/down can prevent ESP32 from booting. |
+| **GPIO 19, 20** | Native USB (D- / D+) used for USB CDC serial monitor and sketch flashing. |
+| **GPIO 26–32** | Hard-wired to internal Quad-SPI Flash memory. |
+| **GPIO 33–37** | Connected to internal Octal-SPI PSRAM/Flash on most ESP32-S3 modules. |
+| **GPIO 43, 44** | Hardware UART0 (TX/RX) serial interface. |
+| **GPIO 48** | Pre-wired to onboard addressable WS2812 RGB LED on DevKit boards. |

@@ -158,6 +158,9 @@ void cycle(uint32_t now) {
   if (!cfg.calValid) { statusTxt = "CAL INCOMPLETE"; found = false; wz = 0; return; }
 
   // weighted centroid
+  // Physical layout: S9 (i=8) is LEFTMOST, S1 (i=0) is RIGHTMOST.
+  // Raw centroid > 4.0 means line is under left sensors (S9 side) → robot is RIGHT of line → negative error.
+  // Negate so: errMm < 0 = robot right of line, errMm > 0 = robot left of line.
   float sumW = 0, sumV = 0; activeCnt = 0; activeMask = 0;
   for (int i = 0; i < N; i++) {
     float v = norm[i];
@@ -167,7 +170,8 @@ void cycle(uint32_t now) {
 
   if (sumW >= 0.01f) {
     centroid = sumV / sumW;
-    errMm = (centroid - (N - 1) / 2.0f) * cfg.spacing;
+    // Negated: S9-side (i=8) gives negative error (robot right of line)
+    errMm = -((centroid - (N - 1) / 2.0f) * cfg.spacing);
     wz = constrain(cfg.kp * errMm + cfg.kd * (errMm - lastErr), -cfg.wzMax, cfg.wzMax);
     lastErr = errMm;
     found = true; everFound = true; lost = false; safeStop = false; lostSince = 0;
@@ -187,7 +191,8 @@ void cycle(uint32_t now) {
     statusTxt = safeStop ? "SAFE STOP" : "LINE LOST";
     if (cfg.logSerial && now - lastLogMs > 200) {
       lastLogMs = now;
-      Serial.printf("LINE LOST, last side: %s\n", lastErr < 0 ? "left" : "right");
+      // errMm < 0 = robot right of line (line was on left/S9 side), errMm > 0 = robot left of line
+      Serial.printf("LINE LOST, last side: %s\n", lastErr < 0 ? "right" : "left");
     }
     if (cfg.logSerial && safeStop && !wasSafe) Serial.println("SAFE STOP");
   }

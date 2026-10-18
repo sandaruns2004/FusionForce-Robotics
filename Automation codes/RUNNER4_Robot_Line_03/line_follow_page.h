@@ -122,7 +122,7 @@ label{font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer}
 
 <!-- ══ SENSOR ARRAY ══ -->
 <div class="card">
-<h2><span class="ico">📏</span> Sensor Array (S1 left → S9 right)</h2>
+<h2><span class="ico">📏</span> Sensor Array (S1 right → S9 left)</h2>
 <div id="sens" class="sens"></div>
 <div class="mut" style="margin-top:6px">Yellow border = active · bar = normalised · dashed red = threshold</div>
 </div>
@@ -136,10 +136,10 @@ label{font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer}
 </div>
 <div class="speed-row" style="margin-top:8px">
 <span>Fast</span>
-<input type="range" id="lfSpeedSl" min="100" max="2000" value="500" oninput="$('lfSpeedVal').textContent=this.value+'ms'; sv('speed',this.value)">
+<input type="range" id="lfSpeedSl" min="100" max="2000" value="200" oninput="$('lfSpeedVal').textContent=this.value+'ms'; sv('speed',this.value)">
 <span>Slow</span>
 </div>
-<div class="speed-val"><span id="lfSpeedVal">500ms</span> per phase (6 phases per cycle)</div>
+<div class="speed-val"><span id="lfSpeedVal">200ms</span> per phase (6 phases per cycle)</div>
 <div class="speed-row" style="margin-top:6px">
 <span>Short</span>
 <input type="range" id="lfStrideSl" min="5" max="40" value="20" oninput="$('lfStrideVal').textContent=this.value+'°'; sv('hip',this.value)">
@@ -159,7 +159,7 @@ label{font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer}
 <h2><span class="ico">🎚️</span> Steering Tuning (PD Controller)</h2>
 <div id="sl"></div>
 <div class="toggle-row">
-<label><input type="checkbox" id="steerInv" checked onchange="sv('sign',this.checked?-1:1)"> Invert steering direction</label>
+<label><input type="checkbox" id="steerInv" onchange="sv('sign',this.checked?-1:1)"> Invert steering direction</label>
 <label><input type="checkbox" id="perPhase" checked onchange="sv('sample',this.checked?1:0)"> Sample per-phase (faster response)</label>
 <label><input type="checkbox" id="stopLost" checked onchange="sv('stopLost',this.checked?1:0)"> Stop when line lost</label>
 <label><input type="checkbox" id="slowOnErr" checked onchange="sv('slowErr',this.checked?1:0)"> Slow down on large error</label>
