@@ -26,7 +26,7 @@ button.s{background:#334155}button:disabled{opacity:.4}select{background:var(--i
 table{width:100%;border-collapse:collapse}td{padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px}td:first-child{color:var(--mut)}
 label{font-size:13px;display:flex;gap:6px;align-items:center}
 </style></head><body><div class="wrap">
-<h1>🎨 TCS34725 Colour Lab <small>RUNNER-4 · ESP32-S3</small></h1><a href="/" style="color:#38bdf8;font-size:13px">← Back to robot control</a> &nbsp; <a href="/linefollow" style="color:#2dd4bf;font-size:13px">🤖 Line Follow</a> &nbsp; <a href="/line" style="color:#38bdf8;font-size:13px">Line array lab</a> &nbsp; <a href="/tof" style="color:#06b6d4;font-size:13px">📡 ToF Sensors →</a>
+<h1>🎨 TCS34725 Colour Lab <small>RUNNER-4 · ESP32-S3</small></h1><a href="/" style="color:#38bdf8;font-size:13px">← Back to robot control</a> &nbsp; <a href="/linefollow" style="color:#2dd4bf;font-size:13px">🤖 Line Follow</a> &nbsp; <a href="/line" style="color:#38bdf8;font-size:13px">Line array lab</a> &nbsp; <a href="/tof" style="color:#06b6d4;font-size:13px">📡 ToF Sensors</a> &nbsp; <a href="/comp" style="color:#f59e0b;font-size:13px;font-weight:700">🏆 Competition →</a>
 <span id="pk" class="pill">Sensor…</span><span id="lk" class="pill">WiFi…</span><span id="rt" class="pill">RTT</span><span id="rate" class="pill"></span><span id="st" class="pill"></span>
 
 <div class="card hero"><div id="circ"></div>

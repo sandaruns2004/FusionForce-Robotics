@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // =============================================================================
 // line_follow.h — Proportional Line-Following Gait for RUNNER4
 //
@@ -515,7 +515,7 @@ inline void lineFollowWalk(int steps, int speedMs) {
 }
 
 // Include the line-follow web page
-#include "line_follow_page.h"
+#include "../dashboard/line_follow_page.h"
 
 // Call once from setup() after lineBegin()
 inline void lineFollowBegin(WebServer &server, const char *ssid) {

@@ -31,7 +31,7 @@ table{width:100%;border-collapse:collapse}td{padding:6px 4px;border-bottom:1px s
 label{font-size:13px;display:flex;gap:6px;align-items:center;margin-top:6px}
 </style></head><body><div class="wrap">
 <h1>📏 Line Array Lab <small>RUNNER-4 · 9× TCRT5000 · ESP32-S3</small></h1>
-<a href="/" style="color:#38bdf8;font-size:13px">← Robot control</a> &nbsp; <a href="/linefollow" style="color:#2dd4bf;font-size:13px">🤖 Line Follow</a> &nbsp; <a href="/color" style="color:#38bdf8;font-size:13px">Colour lab</a> &nbsp; <a href="/tof" style="color:#06b6d4;font-size:13px">📡 ToF Sensors →</a><br>
+<a href="/" style="color:#38bdf8;font-size:13px">← Robot control</a> &nbsp; <a href="/linefollow" style="color:#2dd4bf;font-size:13px">🤖 Line Follow</a> &nbsp; <a href="/color" style="color:#38bdf8;font-size:13px">Colour lab</a> &nbsp; <a href="/tof" style="color:#06b6d4;font-size:13px">📡 ToF Sensors</a> &nbsp; <a href="/comp" style="color:#f59e0b;font-size:13px;font-weight:700">🏆 Competition →</a><br>
 <span id="pk" class="pill">Array…</span><span id="lk" class="pill">WiFi…</span><span id="rt" class="pill">RTT</span><span id="rate" class="pill"></span><span id="st" class="pill"></span>
 
 <div class="card"><div class="hero">

@@ -1,0 +1,181 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TCS34725 Colour Lab [DEMO]</title>
+<style>
+:root{--bg:#0b1220;--card:#131c2e;--in:#0b1424;--line:#243049;--mut:#8da0bd;--ac:#38bdf8}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,Arial;background:var(--bg);color:#e8eefc}
+.demo-bar{background:#1a1040;border-bottom:1px solid #4338ca;padding:8px 16px;text-align:center;font-size:12px;color:#a5b4fc;font-weight:600}
+.wrap{max-width:1000px;margin:auto;padding:16px}h1{margin:0;font-size:24px}h1 small{color:var(--mut);font-size:13px}
+h2{margin:0 0 12px;font-size:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px}
+.pill{display:inline-block;padding:4px 10px;border-radius:99px;font-size:12px;background:#334155;margin:6px 6px 0 0}
+.ok{background:#14532d;color:#bbf7d0}.bad{background:#7f1d1d;color:#fecaca}.warn{background:#713f12;color:#fde68a}
+.hero{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+#circ{width:90px;height:90px;border-radius:50%;background:#64748b;transition:all .5s;flex-shrink:0}
+.big{font-size:40px;font-weight:800}.mut{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.m{background:var(--in);border-radius:10px;padding:10px}.m .t{color:var(--mut);font-size:12px}.m .v{font-size:22px;font-weight:700}
+.bar{height:8px;background:#020617;border-radius:6px;margin-top:6px;overflow:hidden}.bar i{display:block;height:100%;width:0}
+canvas{width:100%;height:150px;background:var(--in);border-radius:10px}
+.chips span{display:inline-block;width:26px;height:26px;border-radius:6px;margin:2px}
+button,select{font:inherit;border-radius:9px;border:0;padding:10px 12px;background:#2563eb;color:#fff;cursor:pointer}
+button.s{background:#334155}select{background:var(--in);border:1px solid var(--line);color:#e8eefc}
+.btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px}
+.ctl{margin-bottom:12px}.ch2{display:flex;justify-content:space-between;font-size:13px}.ch2 b{color:var(--ac)}input[type=range]{width:100%}
+table{width:100%;border-collapse:collapse}td{padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px}td:first-child{color:var(--mut)}
+label{font-size:13px;display:flex;gap:6px;align-items:center}
+nav.topnav{margin:6px 0 4px;font-size:13px}nav.topnav a{color:var(--ac);text-decoration:none;margin-right:12px}
+nav.topnav a.gold{color:#f59e0b;font-weight:700}
+</style></head><body>
+<div class="demo-bar">🖥️ DEMO MODE — simulated colour sensor data | <a href="index.html" style="color:#a5b4fc">← Back to Robot</a></div>
+<div class="wrap">
+<h1>🎨 TCS34725 Colour Lab <small>RUNNER-4 · ESP32-S3</small></h1>
+<nav class="topnav">
+  <a href="index.html">← Robot control</a>
+  <a href="linefollow.html">🤖 Line Follow</a>
+  <a href="line.html">Line array lab</a>
+  <a href="tof.html">📡 ToF Sensors</a>
+  <a class="gold" href="comp.html">🏆 Competition →</a>
+</nav>
+<span id="pk" class="pill ok">Sensor online</span>
+<span id="lk" class="pill ok">Server responding</span>
+<span id="rt" class="pill ok">12 ms round-trip</span>
+<span id="rate" class="pill">12.5 Hz · 50 ms · 16× gain</span>
+<span id="st" class="pill ok">Status: OK</span>
+
+<div class="card hero">
+  <div id="circ"></div>
+  <div>
+    <div class="mut">CONFIRMED (stable)</div>
+    <div id="conf" class="big">RED</div>
+    <div class="mut">instant <b id="inst">RED</b> · voted <b id="voted">RED</b> · stable <b id="stable">8</b></div>
+  </div>
+  <div style="margin-left:auto">
+    <div class="mut">JUNCTION TEST (ball = <b id="ball">RED</b>)</div>
+    <div id="match" class="pill ok">✔ MATCH – TAKE BRANCH</div>
+  </div>
+</div>
+
+<div class="card"><h2>Live data</h2><div class="grid">
+<div class="m"><div class="t">RED</div><div id="r" class="v">2841</div></div>
+<div class="m"><div class="t">GREEN</div><div id="g" class="v">1203</div></div>
+<div class="m"><div class="t">BLUE</div><div id="b" class="v">987</div></div>
+<div class="m"><div class="t">CLEAR <span id="cpct">(58% of 8500)</span></div><div id="c" class="v">4930</div></div>
+<div class="m"><div class="t">r/c (WB)</div><div id="nr" class="v">0.576</div><div class="bar"><i id="br" style="background:#ef4444;width:57%"></i></div></div>
+<div class="m"><div class="t">g/c (WB)</div><div id="ng" class="v">0.244</div><div class="bar"><i id="bg" style="background:#22c55e;width:24%"></i></div></div>
+<div class="m"><div class="t">b/c (WB)</div><div id="nb" class="v">0.200</div><div class="bar"><i id="bb" style="background:#3b82f6;width:20%"></i></div></div>
+<div class="m"><div class="t">HUE °</div><div id="h" class="v">8</div></div>
+<div class="m"><div class="t">SAT</div><div id="s" class="v">0.71</div></div>
+<div class="m"><div class="t">LUX (approx)</div><div id="lux" class="v">842</div></div>
+</div>
+<canvas id="cv" width="900" height="150" style="margin-top:12px"></canvas>
+<div class="mut" style="margin-top:8px">Vote window (newest right):</div>
+<div id="votes" class="chips"></div></div>
+
+<div class="card"><h2>🎯 Ball colour memory</h2>
+<div class="mut">Point at the ball, wait for a CONFIRMED colour, store it. Then point at floor zones.</div>
+<div class="btns"><button onclick="storeBall()">Store confirmed as ball</button><button class="s" onclick="clearBall()">Clear ball</button></div></div>
+
+<div class="card"><h2>🧪 Calibration wizard</h2>
+<div class="mut">Order: 1 White → 2 Black → 3 R, G, B. Same height and lighting each time.</div>
+<div class="btns">
+<button onclick="capMsg('Capturing WHITE...')">1 · White card</button>
+<button onclick="capMsg('Capturing BLACK...')">2 · Black / dark</button>
+<button onclick="capMsg('Capturing RED...')" style="background:#b91c1c">3a · Red</button>
+<button onclick="capMsg('Capturing GREEN...')" style="background:#15803d">3b · Green</button>
+<button onclick="capMsg('Capturing BLUE...')" style="background:#1d4ed8">3c · Blue</button>
+</div>
+<div class="bar" style="height:10px;margin-top:12px"><i id="capbar" style="background:var(--ac);width:0%"></i></div>
+<div id="capmsg" class="mut" style="margin-top:6px"></div></div>
+
+<div class="card"><h2>⚙️ Sensor &amp; mode</h2><div class="btns">
+<div><div class="mut">Integration</div><select><option>50 ms</option><option>103 ms</option><option>154 ms</option></select></div>
+<div><div class="mut">Gain</div><select><option>16×</option><option>1×</option><option>4×</option><option>60×</option></select></div>
+<div><div class="mut">Classifier</div><select><option>Ratio dominance</option><option>HSV hue</option><option>Both must agree</option></select></div>
+<div><label><input type="checkbox" checked>Sensor LED</label><label><input type="checkbox">Auto-gain</label><label><input type="checkbox" checked>White balance</label></div>
+</div></div>
+
+<div class="card"><h2>📡 System &amp; WiFi</h2>
+<table><tr><td>SSID</td><td>RUNNER4-AP</td></tr><tr><td>IP</td><td>192.168.4.1</td></tr>
+<tr><td>RSSI</td><td>-48 dBm</td></tr><tr><td>Uptime</td><td>00:14:22</td></tr><tr><td>Free heap</td><td>187 KB</td></tr></table>
+<div class="btns"><button>💾 Save to flash</button><button class="s">Flush filters</button><button class="s">Re-init sensor</button></div></div>
+</div>
+
+<script>
+const COLOURS = {RED:'#ef4444', GREEN:'#22c55e', BLUE:'#3b82f6'};
+let phase=0, ballStored='RED', hist=[];
+const colorCycle = ['RED','RED','RED','GREEN','RED','RED','BLUE','RED','RED','RED'];
+let ci=0;
+
+function renderVotes(col){
+  const c=document.getElementById('votes');
+  const cols=['#475569','#ef4444','#22c55e','#3b82f6'];
+  const votes=Array.from({length:15},()=>col==='RED'?1:col==='GREEN'?2:3);
+  c.innerHTML=votes.map(v=>`<span style="background:${cols[v]}"></span>`).join('');
+}
+
+function drawChart(){
+  const cv=document.getElementById('cv'),x=cv.getContext('2d');
+  const W=cv.offsetWidth||900,H=150;cv.width=W;cv.height=H;
+  x.clearRect(0,0,W,H);x.fillStyle='#0b1424';x.fillRect(0,0,W,H);
+  x.strokeStyle='#243049';
+  for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,H*i/4);x.lineTo(W,H*i/4);x.stroke()}
+  ['#ef4444','#22c55e','#3b82f6'].forEach((col,k)=>{
+    x.strokeStyle=col;x.lineWidth=2;x.beginPath();
+    hist.forEach((p,i)=>{const X=i*W/149,Y=H-p[k]*H;i?x.lineTo(X,Y):x.moveTo(X,Y)});x.stroke()
+  });
+}
+
+function update(){
+  phase+=0.08;
+  const base=['RED','GREEN','BLUE'][Math.floor(phase/6)%3];
+  const col=base;
+  const colCSS=COLOURS[col]||'#64748b';
+  document.getElementById('circ').style.background=colCSS;
+  document.getElementById('circ').style.boxShadow='0 0 40px '+colCSS;
+  document.getElementById('conf').textContent=col;
+  document.getElementById('inst').textContent=col;
+  document.getElementById('voted').textContent=col;
+
+  const rn=col==='RED'?.576+Math.random()*.04-.02:Math.random()*.15;
+  const gn=col==='GREEN'?.512+Math.random()*.04-.02:Math.random()*.15;
+  const bn=col==='BLUE'?.491+Math.random()*.04-.02:Math.random()*.12;
+  const r=Math.round(rn*4900+Math.random()*100);
+  const g=Math.round(gn*4900+Math.random()*100);
+  const b=Math.round(bn*4900+Math.random()*100);
+  const c=r+g+b;
+  document.getElementById('r').textContent=r;
+  document.getElementById('g').textContent=g;
+  document.getElementById('b').textContent=b;
+  document.getElementById('c').textContent=c;
+  document.getElementById('nr').textContent=rn.toFixed(3);
+  document.getElementById('ng').textContent=gn.toFixed(3);
+  document.getElementById('nb').textContent=bn.toFixed(3);
+  document.getElementById('br').style.width=(rn*100)+'%';
+  document.getElementById('bg').style.width=(gn*100)+'%';
+  document.getElementById('bb').style.width=(bn*100)+'%';
+  hist.push([rn,gn,bn]);if(hist.length>150)hist.shift();drawChart();
+  renderVotes(col);
+  if(ballStored){
+    const m=document.getElementById('match');
+    if(col===ballStored){m.textContent='✔ MATCH – TAKE BRANCH';m.className='pill ok';}
+    else{m.textContent='✘ WRONG BRANCH';m.className='pill bad';}
+    document.getElementById('ball').textContent=ballStored;
+  }
+}
+
+function storeBall(){
+  ballStored=document.getElementById('conf').textContent;
+  document.getElementById('ball').textContent=ballStored;
+}
+function clearBall(){ballStored='';document.getElementById('ball').textContent='none';}
+function capMsg(m){
+  document.getElementById('capmsg').textContent=m;
+  let p=0;const t=setInterval(()=>{
+    p+=5;document.getElementById('capbar').style.width=p+'%';
+    if(p>=100){clearInterval(t);document.getElementById('capmsg').textContent='Done! ✓';}
+  },100);
+}
+setInterval(update,800);update();
+window.addEventListener('resize',drawChart);
+</script>
+</body></html>
+

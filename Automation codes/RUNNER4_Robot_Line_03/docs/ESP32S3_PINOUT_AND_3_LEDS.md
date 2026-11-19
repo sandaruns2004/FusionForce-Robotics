@@ -1,11 +1,11 @@
-# RUNNER4 ESP32-S3 Complete Pinout & Wiring Map
+﻿# RUNNER4 ESP32-S3 Complete Pinout & Wiring Map
 
 This document defines the complete hardware pin allocation for the **RUNNER4 Quadruped Robot** running on the **ESP32-S3** controller (`RUNNER4_Robot_Line_03`).
 
 It covers:
 1. **9-channel TCRT5000 line sensor array** (ADC1 only — WiFi safe)
-2. **Shared I2C bus** (PCA9685 servo driver, TCS34725 colour sensor, and 3× VL53L0X ToF sensors)
-3. **3× VL53L0X ToF distance sensors & XSHUT address remapping**
+2. **Two I2C buses** (PCA9685 + VL53L0X on GPIO 11/12; TCS34725 on GPIO 41/42)
+3. **VL53L0X ToF distance sensor and XSHUT wiring**
 4. **TCS34725 color sensor LED control**
 5. **4-pin status RGB LED** (common cathode)
 6. **3× Hardware pushbuttons** (GPIO 38, 39, 40 with internal pull-up)
@@ -26,11 +26,12 @@ It covers:
 | **8** | Line S7 | 9× TCRT5000 Array | Analog In | ADC1_CH7 (WiFi AP safe) |
 | **9** | Line S8 | 9× TCRT5000 Array | Analog In | ADC1_CH8 (WiFi AP safe) |
 | **10** | Line S9 (Far Left / Leftmost) | 9× TCRT5000 Array | Analog In | ADC1_CH9 (WiFi AP safe) |
-| **11** | I2C SDA | PCA9685 + TCS34725 + 3× VL53L0X | I2C Data | 4.7kΩ pull-up to 3.3V |
-| **12** | I2C SCL | PCA9685 + TCS34725 + 3× VL53L0X | I2C Clock | 4.7kΩ pull-up to 3.3V, 400kHz |
-| **13** | **VL53L0X Front XSHUT** | Front Wall / Obstacle ToF | Digital Out | Active LOW reset / boot remap |
-| **14** | **VL53L0X Right XSHUT** | Right Wall Distance ToF | Digital Out | Active LOW reset / boot remap |
-| **21** | **VL53L0X Left XSHUT** | Left Wall Distance ToF | Digital Out | Active LOW reset / boot remap |
+| **11** | I2C SDA0 | PCA9685 + VL53L0X | I2C Data | 4.7kΩ pull-up to 3.3V |
+| **12** | I2C SCL0 | PCA9685 + VL53L0X | I2C Clock | 4.7kΩ pull-up to 3.3V, 400kHz |
+| **13** | VL53L0X XSHUT | Front obstacle ToF | Digital Out | Active LOW reset; current firmware doesn't toggle it |
+| **14** | **VL53L0X Right XSHUT** | Right ToF (if fitted) | Digital Out | Active LOW reset / address setup |
+| **21** | **ARM Grip Servo PWM** | Arm gripper servo (direct) | PWM Out (LEDC ch 9) | Was Left ToF XSHUT — left ToF NOT fitted. Direct servo signal to gripper servo. |
+| **47** | **ARM Lift Servo PWM** | Arm lift servo (direct) | PWM Out (LEDC ch 8) | Free GPIO on right header. Direct servo signal to lift servo. |
 | **15** | TCS34725 LED Control | TCS34725 Colour Sensor | Digital Out | HIGH = white LED on, LOW = off |
 | **16** | Status LED — Red | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
 | **17** | Status LED — Green | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
@@ -38,6 +39,8 @@ It covers:
 | **38** | **Button 1 (SW1)** | Pushbutton (e.g. Start / Stop) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
 | **39** | **Button 2 (SW2)** | Pushbutton (e.g. Calibrate / Stand) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
 | **40** | **Button 3 (SW3)** | Pushbutton (e.g. Mode / Home) | Digital In | `INPUT_PULLUP` (Press = LOW to GND) |
+| **41** | I2C SDA1 | TCS34725 colour sensor | I2C Data | Second hardware I2C bus |
+| **42** | I2C SCL1 | TCS34725 colour sensor | I2C Clock | Second hardware I2C bus |
 
 > [!IMPORTANT]
 > **ADC1 vs ADC2 Constraint:**
@@ -47,24 +50,22 @@ It covers:
 
 ---
 
-## 2. Shared I2C Bus & Address Map
+## 2. Separate I2C Buses & Address Map
 
-All five I2C devices share the same single bus (**SDA: GPIO 11**, **SCL: GPIO 12**).
+The PCA9685 and VL53L0X share the main bus (**SDA: GPIO 11**, **SCL: GPIO 12**). The TCS34725 uses the ESP32-S3's second I2C controller (**SDA: GPIO 41**, **SCL: GPIO 42**). Both sensors can therefore retain address `0x29` without colliding. GPIO 41/42 are marked free in this project's pin diagram and are not used by the current sketch.
 
 | Device | Default Boot Address | Runtime Address | How Address Is Set |
 | :--- | :---: | :---: | :--- |
 | **PCA9685** (12 Servo Driver) | `0x40` | **`0x40`** | Hardware address pins A0–A5 grounded |
-| **TCS34725** (Colour Sensor) | `0x29` | **`0x29`** | Fixed factory address |
-| **VL53L0X Front ToF** | `0x29` | **`0x30`** | Remapped at boot via **GPIO 13** XSHUT |
-| **VL53L0X Left ToF** | `0x29` | **`0x31`** | Remapped at boot via **GPIO 21** XSHUT |
-| **VL53L0X Right ToF** | `0x29` | **`0x32`** | Remapped at boot via **GPIO 14** XSHUT |
+| **TCS34725** (Colour Sensor) | `0x29` | **`0x29`** | Dedicated I2C1 bus, GPIO 41/42 |
+| **VL53L0X** (Front ToF) | `0x29` | **`0x30`** | Main I2C0 bus, GPIO 11/12 |
 
 ### Why XSHUT Is Required
-The VL53L0X sensor boots at factory address `0x29`. The TCS34725 color sensor **also** sits permanently at `0x29`. Without XSHUT control, all three VL53L0X sensors and the TCS34725 would collide on `0x29`, crashing the entire I2C bus.
+The VL53L0X and TCS34725 may share the same numeric address because they are physically on separate ESP32-S3 I2C controllers and separate SDA/SCL wires. The PCA9685 remains on the main bus at `0x40`.
 
 ---
 
-## 3. 3× VL53L0X Distance Sensors & XSHUT Wiring
+## 3. VL53L0X ToF Sensor Wiring
 
 ### Sensor Wiring
 
@@ -72,67 +73,12 @@ The VL53L0X sensor boots at factory address `0x29`. The TCS34725 color sensor **
 | :--- | :--- | :--- |
 | **VIN** | ESP32 **3.3V** | Never connect to 5V |
 | **GND** | Common **GND** | Must share ground with ESP32 |
-| **SDA** | **GPIO 11** | Shared I2C SDA bus line |
-| **SCL** | **GPIO 12** | Shared I2C SCL bus line |
-| **XSHUT (Front)** | **GPIO 13** | Dedicated shutdown line |
-| **XSHUT (Left)** | **GPIO 21** | Dedicated shutdown line |
-| **XSHUT (Right)** | **GPIO 14** | Dedicated shutdown line |
+| **SDA** | **GPIO 11** | Main I2C0 SDA shared with PCA9685 |
+| **SCL** | **GPIO 12** | Main I2C0 SCL shared with PCA9685 |
+| **XSHUT** | **GPIO 13** | Optional shutdown line; current firmware does not toggle it |
 | **GPIO1 (Interrupt)** | *Leave unconnected* | Not needed for polling |
 
-### Sequential Boot & Address Remap Code
-
-At power-up, all three XSHUT lines are pulled LOW (sensors kept off). Each sensor is then awakened one at a time, assigned its new I2C address, and kept active:
-
-```cpp
-#include <Wire.h>
-#include <VL53L0X.h>
-
-constexpr uint8_t XSHUT_FRONT = 13;
-constexpr uint8_t XSHUT_LEFT  = 21;
-constexpr uint8_t XSHUT_RIGHT = 14;
-
-VL53L0X tofFront;
-VL53L0X tofLeft;
-VL53L0X tofRight;
-
-void initToFSensors() {
-  // Step 1: Put all 3 sensors into reset
-  pinMode(XSHUT_FRONT, OUTPUT);
-  pinMode(XSHUT_LEFT,  OUTPUT);
-  pinMode(XSHUT_RIGHT, OUTPUT);
-  digitalWrite(XSHUT_FRONT, LOW);
-  digitalWrite(XSHUT_LEFT,  LOW);
-  digitalWrite(XSHUT_RIGHT, LOW);
-  delay(10);
-
-  // Step 2: Boot & remap Front sensor
-  digitalWrite(XSHUT_FRONT, HIGH);
-  delay(10);
-  tofFront.setTimeout(500);
-  if (tofFront.init()) {
-    tofFront.setAddress(0x30);  // Remapped to 0x30
-    Serial.println("[ToF] Front online at 0x30");
-  }
-
-  // Step 3: Boot & remap Left sensor
-  digitalWrite(XSHUT_LEFT, HIGH);
-  delay(10);
-  tofLeft.setTimeout(500);
-  if (tofLeft.init()) {
-    tofLeft.setAddress(0x31);   // Remapped to 0x31
-    Serial.println("[ToF] Left online at 0x31");
-  }
-
-  // Step 4: Boot & remap Right sensor
-  digitalWrite(XSHUT_RIGHT, HIGH);
-  delay(10);
-  tofRight.setTimeout(500);
-  if (tofRight.init()) {
-    tofRight.setAddress(0x32);  // Remapped to 0x32
-    Serial.println("[ToF] Right online at 0x32");
-  }
-}
-```
+The current `RUNNER4_Robot_Line_03` firmware implements one VL53L0X sensor on GPIO 11/12. GPIO 41/42 carry the color sensor's second I2C bus and do not overlap the documented XSHUT pins.
 
 ---
 
@@ -151,8 +97,8 @@ Visual layout of the ESP32-S3 DevKit (44-pin board):
   Board Reset ───────── EN                 GPIO44 ──────── (UART0 RX)
   Line S3 (ADC1) ────── GPIO4               GPIO1 ──────── Line S1 (ADC1)
   Line S4 (ADC1) ────── GPIO5               GPIO2 ──────── Line S2 (ADC1)
-  Line S5 Center ────── GPIO6              GPIO42 ──────── [Free GPIO]
-  Line S6 (ADC1) ────── GPIO7              GPIO41 ──────── [Free GPIO]
+  Line S5 Center ────── GPIO6              GPIO42 ──────── Color I2C1 SCL
+  Line S6 (ADC1) ────── GPIO7              GPIO41 ──────── Color I2C1 SDA
   TCS LED Ctrl ──────── GPIO15             GPIO40 ──────── Button 3 (INPUT_PULLUP)
   Status LED Red ────── GPIO16             GPIO39 ──────── Button 2 (INPUT_PULLUP)
   Status LED Green ──── GPIO17             GPIO38 ──────── Button 1 (INPUT_PULLUP)
@@ -162,8 +108,8 @@ Visual layout of the ESP32-S3 DevKit (44-pin board):
   USB D+ (Native) ───── GPIO20              GPIO0 ──────── (Strapping / Boot)
   (Strapping) ───────── GPIO3              GPIO45 ──────── (Strapping)
   (Strapping) ───────── GPIO46             GPIO48 ──────── (Onboard RGB)
-  Line S8 (ADC1) ────── GPIO9              GPIO47 ──────── [Free GPIO]
-  Line S9 (ADC1) ────── GPIO10             GPIO21 ──────── ToF Left XSHUT
+  Line S8 (ADC1) ────── GPIO9              GPIO47 ──────── ARM Lift Servo (LEDC ch8)
+  Line S9 (ADC1) ────── GPIO10             GPIO21 ──────── ARM Grip Servo (LEDC ch9)
   I2C SDA ───────────── GPIO11              20/19 ──────── (USB D+/D-)
   I2C SCL ───────────── GPIO12               GND  ──────── Common Ground
   ToF Front XSHUT ───── GPIO13               5V   ──────── 5V Reg In / VBUS
@@ -218,7 +164,7 @@ void setRgb(bool red, bool green, bool blue) {
   - 100% free digital GPIOs with internal pull-up and pull-down support.
   - Completely independent of boot strapping pins (0, 3, 45, 46) and native USB (19, 20).
   - Safe for active-LOW switches: **no external resistors needed** (`pinMode(pin, INPUT_PULLUP)`).
-  - *(If a 4th button or toggle switch is ever added, **GPIO 41** or **GPIO 42** right next to them can be used).*
+  - *(If a 4th button or toggle switch is ever added, use another GPIO marked free in the pin table).*
 
 ### Hardware Wiring (Active-LOW to GND)
 

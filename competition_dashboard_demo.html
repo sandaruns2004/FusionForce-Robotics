@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Competition · RUNNER-4 [DEMO]</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Outfit:wght@300;400;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+:root{
+  --bg:#080d18;--card:#0e1624;--in:#0b1020;--line:#1e2d47;
+  --mut:#6b82a0;--ac:#06b6d4;--ac2:#8b5cf6;--ac3:#f59e0b;
+  --red:#ef4444;--grn:#22c55e;--blue:#3b82f6;--pink:#ec4899;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:#e2eaf8;font-family:'Inter',system-ui,sans-serif;min-height:100vh}
+.wrap{max-width:820px;margin:0 auto;padding:20px 16px 60px}
+
+/* ── Demo banner ── */
+.demo-bar{background:linear-gradient(135deg,#1e1b4b,#312e81);border:1px solid #4338ca;
+  border-radius:12px;padding:10px 16px;margin-bottom:18px;
+  display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600}
+.demo-bar .d-icon{font-size:18px}
+.demo-bar .d-text{color:#a5b4fc}
+.demo-bar .d-badge{margin-left:auto;background:#4338ca;color:#c7d2fe;padding:3px 10px;
+  border-radius:99px;font-size:11px}
+
+/* ── Header ── */
+.hdr{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.hdr-icon{width:50px;height:50px;border-radius:16px;
+  background:linear-gradient(135deg,#f59e0b,#ef4444);
+  display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;
+  box-shadow:0 4px 20px rgba(245,158,11,.35)}
+.hdr h1{font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;
+  background:linear-gradient(135deg,#f59e0b,#ef4444);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr h1 small{color:var(--mut);font-size:13px;font-weight:400;margin-left:8px;
+  -webkit-text-fill-color:var(--mut)}
+
+/* ── Navigation ── */
+.nav{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.nav a{font-size:12px;padding:5px 10px;border-radius:8px;text-decoration:none;font-weight:600;
+  transition:all .15s;background:#1e2d47;color:#94a3b8}
+.nav a:hover{background:#2d3f5e;color:#e2eaf8}
+.nav a.active{background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff}
+.nav .sep{color:var(--line);font-size:10px}
+
+/* ── Pills ── */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:99px;
+  font-size:12px;font-weight:600;background:#1e2d47;transition:all .4s}
+.pill.ok{background:#064e3b;color:#6ee7b7}
+.pill.bad{background:#4c0519;color:#fda4af}
+.pill.warn{background:#713f12;color:#fde68a}
+.pill.run{background:#172554;color:#93c5fd;animation:pulseBlue 2s infinite}
+@keyframes pulseBlue{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.4)}50%{box-shadow:0 0 0 8px rgba(59,130,246,0)}}
+@keyframes glowAmber{0%,100%{box-shadow:0 0 8px rgba(245,158,11,.25)}50%{box-shadow:0 0 24px rgba(245,158,11,.55)}}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;
+  position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(6,182,212,.3),transparent)}
+.card h2{margin:0 0 14px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card h2 .ico{font-size:18px}
+
+/* ── Status Hero ── */
+.status-hero{text-align:center;padding:28px 20px 20px}
+.status-label{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.14em;margin-bottom:8px}
+.status-val{font-family:'Outfit',sans-serif;font-size:40px;font-weight:800;line-height:1.15;margin-bottom:4px;transition:all .5s}
+.status-val.idle{color:#475569}
+.status-val.running{background:linear-gradient(135deg,var(--ac),var(--ac2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.status-val.done{color:var(--grn)}
+.status-val.err{color:var(--red)}
+.timer{font-family:'Outfit',sans-serif;font-size:60px;font-weight:800;color:#e2eaf8;
+  letter-spacing:3px;margin:8px 0 4px;font-variant-numeric:tabular-nums}
+.timer-sub{font-size:11px;color:var(--mut);letter-spacing:.06em}
+.timer-limit{display:inline-block;margin-top:6px;padding:3px 10px;background:#1e2d47;
+  border-radius:99px;font-size:11px;color:var(--ac3);font-weight:600}
+
+/* ── Task Timeline ── */
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+@media(max-width:580px){.timeline{grid-template-columns:repeat(2,1fr)}}
+.task-block{background:var(--in);border:2px solid var(--line);border-radius:14px;
+  padding:14px 10px;text-align:center;transition:all .5s;position:relative;overflow:hidden;cursor:default}
+.task-block.active{border-color:var(--ac);box-shadow:0 0 24px rgba(6,182,212,.18);animation:glowAmber 2s infinite;
+  border-color:#f59e0b}
+.task-block.pass{border-color:var(--grn);background:#052e16}
+.task-block.fail{border-color:var(--red);background:#450a0a}
+.task-block.skip{opacity:.35}
+.task-shine{position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.04),transparent);pointer-events:none}
+.task-num{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.1em}
+.task-icon{font-size:30px;margin:8px 0 6px;line-height:1}
+.task-name{font-size:12px;font-weight:700;color:#c9d1e0;margin-bottom:6px}
+.task-status{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;display:inline-block}
+.task-status.waiting{color:#475569;background:transparent}
+.task-status.active{color:#f59e0b;background:#1c1508}
+.task-status.pass{color:var(--grn);background:#052e16}
+.task-status.fail{color:var(--red);background:#450a0a}
+.task-progress{height:3px;background:#1e293b;border-radius:2px;margin-top:10px;overflow:hidden}
+.task-progress .fill{height:100%;border-radius:2px;width:0%;
+  background:linear-gradient(90deg,var(--ac),var(--ac2));transition:width .6s ease}
+
+/* ── Controls ── */
+.ctrl-grid{display:grid;grid-template-columns:1fr 200px;gap:14px;align-items:start}
+@media(max-width:560px){.ctrl-grid{grid-template-columns:1fr}}
+.start-btn{width:100%;padding:18px 20px;border:0;border-radius:14px;cursor:pointer;
+  font-family:'Outfit',sans-serif;font-size:19px;font-weight:800;letter-spacing:.05em;
+  transition:all .25s;position:relative;overflow:hidden;user-select:none}
+.start-btn.go{background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;
+  box-shadow:0 4px 24px rgba(34,197,94,.3)}
+.start-btn.go:hover{transform:translateY(-2px);box-shadow:0 10px 32px rgba(34,197,94,.45)}
+.start-btn.stop{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;
+  box-shadow:0 4px 24px rgba(239,68,68,.3)}
+.start-btn.stop:hover{transform:translateY(-2px)}
+.start-btn.stop::after{content:'';position:absolute;inset:0;
+  background:rgba(255,255,255,.08);animation:scanline 1.5s infinite;
+  background-size:100% 40px;}
+@keyframes scanline{0%{background-position:0 -40px}100%{background-position:0 100%}}
+.ctrl-side{display:flex;flex-direction:column;gap:10px}
+.cp-label{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+select{background:var(--in);border:1px solid var(--line);border-radius:10px;
+  color:#e2eaf8;padding:10px 12px;font-size:13px;font-weight:600;outline:none;width:100%;
+  font-family:'Inter',sans-serif;cursor:pointer;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='%236b82a0'%3E%3Cpath d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center}
+select:focus{border-color:var(--ac)}
+select:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── Sensor Strip ── */
+.sensor-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sensor-box{background:var(--in);border:1px solid var(--line);border-radius:12px;
+  padding:14px 10px;text-align:center;transition:border-color .3s}
+.sensor-box.alert{border-color:var(--red)}
+.sensor-box.warn{border-color:var(--ac3)}
+.sensor-box .s-icon{font-size:22px;margin-bottom:4px}
+.sensor-box .s-label{font-size:10px;font-weight:700;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.07em}
+.sensor-box .s-val{font-family:'Outfit',sans-serif;font-size:28px;font-weight:800;margin-top:4px;
+  transition:color .3s}
+.sensor-box .s-unit{font-size:11px;color:var(--mut)}
+
+/* ── Ball display ── */
+.ball-display{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--in);
+  border-radius:14px;border:1px solid var(--line)}
+.ball-circle{width:52px;height:52px;border-radius:50%;border:3px solid #1e2d47;
+  transition:all .6s;flex-shrink:0;position:relative;overflow:hidden}
+.ball-circle::after{content:'';position:absolute;top:20%;left:22%;width:30%;height:25%;
+  background:rgba(255,255,255,.4);border-radius:50%;filter:blur(2px)}
+.ball-circle.none{background:#1e293b}
+.ball-circle.red{background:radial-gradient(circle at 35% 30%,#fca5a5,#ef4444 50%,#991b1b);
+  border-color:#ef4444;box-shadow:0 0 20px rgba(239,68,68,.45)}
+.ball-circle.green{background:radial-gradient(circle at 35% 30%,#86efac,#22c55e 50%,#166534);
+  border-color:#22c55e;box-shadow:0 0 20px rgba(34,197,94,.45)}
+.ball-circle.blue{background:radial-gradient(circle at 35% 30%,#93c5fd,#3b82f6 50%,#1e3a8a);
+  border-color:#3b82f6;box-shadow:0 0 20px rgba(59,130,246,.45)}
+.ball-info .bi-label{font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;margin-bottom:4px}
+.ball-info .bi-val{font-size:22px;font-weight:800;font-family:'Outfit',sans-serif}
+.ball-info .bi-sub{font-size:11px;color:var(--mut);margin-top:4px}
+
+/* ── Arm controls ── */
+.arm-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.arm-btn{padding:12px 8px;border:0;border-radius:11px;cursor:pointer;font-size:13px;
+  font-weight:700;transition:all .18s;font-family:'Inter',sans-serif;
+  display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1}
+.arm-btn span{font-size:10px;font-weight:600;opacity:.75}
+.arm-btn:hover{transform:translateY(-2px)}
+.arm-btn:active{transform:translateY(0)}
+.arm-btn.pick{background:linear-gradient(135deg,#6d28d9,#a78bfa);color:#fff;
+  box-shadow:0 4px 14px rgba(109,40,217,.3)}
+.arm-btn.place{background:linear-gradient(135deg,#0e7490,#22d3ee);color:#fff;
+  box-shadow:0 4px 14px rgba(14,116,144,.3)}
+.arm-btn.neutral{background:#1e2d47;color:#94a3b8;border:1px solid var(--line)}
+.arm-btn.neutral:hover{background:#2d3f5e;color:#e2eaf8}
+.arm-response{margin-top:10px;padding:8px 12px;border-radius:8px;background:var(--in);
+  border:1px solid var(--line);font-family:'JetBrains Mono',monospace;
+  font-size:11px;color:var(--ac);display:none}
+.arm-response.show{display:block}
+
+/* ── Log ── */
+.log{max-height:220px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--mut);background:var(--in);border-radius:12px;padding:10px;border:1px solid var(--line)}
+.log::-webkit-scrollbar{width:4px}
+.log::-webkit-scrollbar-track{background:transparent}
+.log::-webkit-scrollbar-thumb{background:#1e2d47;border-radius:4px}
+.log .le{padding:3px 0;border-bottom:1px solid rgba(30,45,71,.5);display:flex;gap:8px}
+.log .lt{color:#334155;flex-shrink:0}
+.log .li{color:var(--ac)}.log .lw{color:var(--ac3)}.log .le-err{color:var(--red)}.log .lok{color:var(--grn)}
+
+/* ── Row layout ── */
+.row{display:flex;gap:14px;margin-bottom:16px}
+.row>.card{flex:1;margin-bottom:0}
+@media(max-width:560px){.row{flex-direction:column}}
+
+/* ── Small buttons ── */
+.btn-s{padding:6px 12px;border:0;border-radius:8px;cursor:pointer;font-size:11px;font-weight:700;
+  background:#1e2d47;color:#94a3b8;transition:all .15s;font-family:'Inter',sans-serif}
+.btn-s:hover{background:#2d3f5e;color:#e2eaf8}
+
+/* ── Simulation controls (demo only) ── */
+.sim-bar{background:linear-gradient(135deg,#0c0a1e,#130e2a);border:1px solid #2d1b69;
+  border-radius:16px;padding:18px;margin-bottom:20px}
+.sim-bar h3{font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.sim-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.sim-btn{padding:10px 14px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;
+  font-size:12px;font-weight:700;background:#1e1b4b;color:#a5b4fc;transition:all .2s;
+  font-family:'Inter',sans-serif;text-align:center}
+.sim-btn:hover{background:#312e81;border-color:#6366f1;color:#e0e7ff;transform:translateY(-1px)}
+.sim-btn.danger{border-color:#7f1d1d;background:#1c0a0a;color:#fca5a5}
+.sim-btn.danger:hover{background:#450a0a}
+.sim-btn.success{border-color:#14532d;background:#0a1c12;color:#86efac}
+.sim-btn.success:hover{background:#052e16}
+.sim-step{font-size:11px;color:#6d28d9;margin-top:10px;font-family:'JetBrains Mono',monospace}
+
+/* ── Misc ── */
+.divider{border:none;border-top:1px solid var(--line);margin:4px 0 16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ── DEMO BANNER ── -->
+<div class="demo-bar">
+  <span class="d-icon">🖥️</span>
+  <span class="d-text">This is a <strong>static HTML demo</strong> — use the simulator below to preview all states. On the real robot, data is fetched live from the ESP32.</span>
+  <span class="d-badge">DEMO MODE</span>
+</div>
+
+<!-- ── HEADER ── -->
+<div class="hdr">
+  <div class="hdr-icon">🏆</div>
+  <h1>Competition Control <small>RUNNER-4 · FSM v7.0</small></h1>
+</div>
+
+<!-- ── NAV ── -->
+<nav class="nav">
+  <a href="#">🤖 Robot</a>
+  <a href="#">📏 Line</a>
+  <a href="#">🏁 Follow</a>
+  <a href="#">🎨 Colour</a>
+  <a href="#">📡 ToF</a>
+  <span class="sep">│</span>
+  <a class="active" href="#">🏆 Competition</a>
+  <span class="sep">│</span>
+  <span class="pill ok" id="connPill">✅ Connected</span>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIMULATION CONTROLS  (demo-only section)
+══════════════════════════════════════════════════════════ -->
+<div class="sim-bar">
+  <h3>🎮 Demo Simulator — Click to preview states</h3>
+  <div class="sim-grid">
+    <button class="sim-btn" onclick="simIdle()">⬛ Idle / Ready</button>
+    <button class="sim-btn" onclick="simStart(1)">🔍 Task 1 Running</button>
+    <button class="sim-btn" onclick="simStart(2)">🌀 Task 2 Running</button>
+    <button class="sim-btn" onclick="simStart(3)">📦 Task 3 Running</button>
+    <button class="sim-btn" onclick="simStart(4)">🎨 Task 4 Running</button>
+    <button class="sim-btn success" onclick="simFinished()">✅ All Tasks Done</button>
+    <button class="sim-btn danger" onclick="simAborted()">🛑 Run Aborted</button>
+    <button class="sim-btn" onclick="simBall('red')">🔴 Ball = Red</button>
+    <button class="sim-btn" onclick="simBall('green')">🟢 Ball = Green</button>
+    <button class="sim-btn" onclick="simBall('blue')">🔵 Ball = Blue</button>
+    <button class="sim-btn" onclick="simTask1Fail()">❌ Task 1 Fail</button>
+    <button class="sim-btn" onclick="simCheckpoint()">↩️ Checkpoint Start (T3)</button>
+  </div>
+  <div class="sim-step" id="simStep">← Select a scenario above to preview</div>
+</div>
+
+<!-- ══ STATUS HERO ══ -->
+<div class="card" id="heroCard">
+  <div class="status-hero">
+    <div class="status-label">Competition Status</div>
+    <div class="status-val idle" id="stateText">IDLE</div>
+    <div class="timer" id="timerText">00:00.0</div>
+    <div class="timer-sub">Elapsed Time</div>
+    <div class="timer-limit">⏱️ 15:00 limit · 3 restarts allowed</div>
+  </div>
+</div>
+
+<!-- ══ TASK TIMELINE ══ -->
+<div class="timeline" id="timeline">
+  <div class="task-block" id="tb1">
+    <div class="task-shine"></div>
+    <div class="task-num">Task 1</div>
+    <div class="task-icon">🔍</div>
+    <div class="task-name">Grid Search</div>
+    <div class="task-status waiting" id="ts1">Waiting</div>
+    <div class="task-progress"><div class="fill" id="tp1"></div></div>
+  </div>
+  <div class="task-block" id="tb2">
+    <div class="task-shine"></div>
+    <div class="task-num">Task 2</div>
+    <div class="task-icon">🌀</div>
+    <div class="task-name">Corridor</div>
+    <div class="task-status waiting" id="ts2">Waiting</div>
+    <div class="task-progress"><div class="fill" id="tp2"></div></div>
+  </div>
+  <div class="task-block" id="tb3">
+    <div class="task-shine"></div>
+    <div class="task-num">Task 3</div>
+    <div class="task-icon">📦</div>
+    <div class="task-name">Push Box</div>
+    <div class="task-status waiting" id="ts3">Waiting</div>
+    <div class="task-progress"><div class="fill" id="tp3"></div></div>
+  </div>
+  <div class="task-block" id="tb4">
+    <div class="task-shine"></div>
+    <div class="task-num">Task 4</div>
+    <div class="task-icon">🎨</div>
+    <div class="task-name">Color Sort</div>
+    <div class="task-status waiting" id="ts4">Waiting</div>
+    <div class="task-progress"><div class="fill" id="tp4"></div></div>
+  </div>
+</div>
+
+<!-- ══ CONTROLS ══ -->
+<div class="card">
+  <h2><span class="ico">🎮</span> Controls</h2>
+  <div class="ctrl-grid">
+    <div>
+      <button class="start-btn go" id="startBtn" onclick="toggleComp()">▶ START COMPETITION</button>
+    </div>
+    <div class="ctrl-side">
+      <div>
+        <div class="cp-label">Start From (Checkpoint)</div>
+        <select id="fromSel">
+          <option value="1" selected>Task 1 — Grid Search</option>
+          <option value="2">Task 2 — Corridor</option>
+          <option value="3">Task 3 — Push Box</option>
+          <option value="4">Task 4 — Color Sort</option>
+        </select>
+      </div>
+      <div>
+        <div class="cp-label">Ball Color Override</div>
+        <select id="colorSel">
+          <option value="0" selected>Auto (from Task 1)</option>
+          <option value="1">🔴 Red</option>
+          <option value="2">🟢 Green</option>
+          <option value="3">🔵 Blue</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LIVE SENSORS + BALL ══ -->
+<div class="row">
+  <div class="card">
+    <h2><span class="ico">📡</span> Live Sensors</h2>
+    <div class="sensor-strip">
+      <div class="sensor-box" id="sboxTof">
+        <div class="s-icon">📡</div>
+        <div class="s-label">Front ToF</div>
+        <div class="s-val" id="svTof" style="color:var(--grn)">342</div>
+        <div class="s-unit">mm</div>
+      </div>
+      <div class="sensor-box" id="sboxLine">
+        <div class="s-icon">📏</div>
+        <div class="s-label">Line Error</div>
+        <div class="s-val" id="svLine" style="color:var(--ac)">+3.2</div>
+        <div class="s-unit">mm</div>
+      </div>
+      <div class="sensor-box" id="sboxJunc">
+        <div class="s-icon">🔗</div>
+        <div class="s-label">Junction</div>
+        <div class="s-val" id="svJunc" style="font-size:14px;color:#475569">None</div>
+        <div class="s-unit">&nbsp;</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="ico">🎱</span> Ball</h2>
+    <div class="ball-display">
+      <div class="ball-circle none" id="ballCircle"></div>
+      <div class="ball-info">
+        <div class="bi-label">Detected Color</div>
+        <div class="bi-val" id="ballName" style="color:#475569">None</div>
+        <div class="bi-sub" id="ballSub">Searching...</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mut)">
+      <span>Picked:</span>
+      <span class="pill" id="pickedPill">—</span>
+      <span style="margin-left:auto">Branch:</span>
+      <span class="pill" id="branchPill">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ARM CONTROLS ══ -->
+<div class="card">
+  <h2><span class="ico">🦾</span> Arm Controls
+    <span style="font-size:11px;font-weight:400;color:var(--mut);margin-left:6px">Serial UART → Arm ESP32</span>
+  </h2>
+  <div class="arm-grid">
+    <button class="arm-btn pick" onclick="armCmd('pick')">
+      🎯<span>PICK UP</span>
+    </button>
+    <button class="arm-btn place" onclick="armCmd('place')">
+      📥<span>PLACE</span>
+    </button>
+    <button class="arm-btn neutral" onclick="armCmd('up')">
+      ⬆️<span>Up</span>
+    </button>
+    <button class="arm-btn neutral" onclick="armCmd('down')">
+      ⬇️<span>Down</span>
+    </button>
+    <button class="arm-btn neutral" onclick="armCmd('open')">
+      ✋<span>Open</span>
+    </button>
+    <button class="arm-btn neutral" onclick="armCmd('close')">
+      ✊<span>Close</span>
+    </button>
+  </div>
+  <div class="arm-response" id="armResp"></div>
+</div>
+
+<!-- ══ EVENT LOG ══ -->
+<div class="card">
+  <h2 style="margin-bottom:6px">
+    <span class="ico">📝</span> Event Log
+    <button class="btn-s" onclick="clearLog()" style="margin-left:auto">Clear</button>
+  </h2>
+  <div class="log" id="logbox"></div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── Simulation state ─────────────────────────────────────────────────────────
+let isRunning = false;
+let timerInterval = null;
+let elapsedMs = 0;
+let currentTask = 0;      // 1–4 active, 0 = idle
+let taskResults = [false, false, false, false];
+let ballColor = 'none';
+let ballColorId = 0;
+let startFrom = 1;
+
+const COLOR_CSS   = {0:'none',  1:'red',   2:'green', 3:'blue'};
+const COLOR_NAMES = {0:'None',  1:'Red',   2:'Green', 3:'Blue'};
+const COLOR_BRANCH= {1:'Red branch',2:'Green branch',3:'Blue branch'};
+
+// ── Helper: grab DOM element ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+function addLog(msg, cls='li'){
+  const box = $('logbox');
+  const row = document.createElement('div');
+  row.className = 'le';
+  const ts = document.createElement('span');
+  ts.className = 'lt';
+  ts.textContent = new Date().toLocaleTimeString('en',{hour12:false,
+    hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const tx = document.createElement('span');
+  tx.className = cls;
+  tx.textContent = msg;
+  row.appendChild(ts);
+  row.appendChild(tx);
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog(){ $('logbox').innerHTML = ''; }
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
+function startTimer(){
+  elapsedMs = 0;
+  timerInterval = setInterval(()=>{
+    elapsedMs += 100;
+    $('timerText').textContent = formatTime(elapsedMs);
+    // Animate sensor values while running
+    animateSensors();
+  }, 100);
+}
+function stopTimer(){
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+function formatTime(ms){
+  const min = Math.floor(ms/60000);
+  const sec = Math.floor((ms/1000)%60);
+  const dec = Math.floor((ms/100)%10);
+  return String(min).padStart(2,'0')+':'+String(sec).padStart(2,'0')+'.'+dec;
+}
+
+// ── Sensor animation (fake live data while running) ───────────────────────────
+let sensorPhase = 0;
+function animateSensors(){
+  sensorPhase += 0.15;
+  const tof = Math.round(180 + Math.sin(sensorPhase)*80 + Math.random()*15);
+  const lineErr = +(Math.sin(sensorPhase*0.7)*12 + Math.random()*3 - 1.5).toFixed(1);
+  const juncChance = Math.random() < 0.04;
+
+  const tofEl = $('svTof');
+  tofEl.textContent = tof;
+  tofEl.style.color = tof < 150 ? 'var(--red)' : tof < 280 ? 'var(--ac3)' : 'var(--grn)';
+  $('sboxTof').className = 'sensor-box' + (tof<150?' alert':tof<280?' warn':'');
+
+  const lineEl = $('svLine');
+  lineEl.textContent = (lineErr>=0?'+':'')+lineErr;
+  lineEl.style.color = Math.abs(lineErr)>8 ? 'var(--red)' : Math.abs(lineErr)>4 ? 'var(--ac3)' : 'var(--ac)';
+
+  if(juncChance){
+    const types=['T-LEFT','T-RIGHT','CROSS','WIDE'];
+    $('svJunc').textContent = types[Math.floor(Math.random()*types.length)];
+    $('svJunc').style.color = 'var(--ac3)';
+    setTimeout(()=>{
+      $('svJunc').textContent = 'None';
+      $('svJunc').style.color = '#475569';
+    }, 600);
+  }
+}
+
+// ── Timeline renderer ─────────────────────────────────────────────────────────
+function renderTimeline(){
+  for(let i=1;i<=4;i++){
+    const tb = $('tb'+i);
+    const ts = $('ts'+i);
+    const tp = $('tp'+i);
+    tb.className = 'task-block';
+    ts.className = 'task-status';
+
+    if(i < startFrom && currentTask === 0){
+      // Skipped (checkpoint start, idle)
+      tb.classList.add('skip');
+      ts.textContent = 'Skipped';
+      ts.classList.add('waiting');
+      tp.style.width = '0%';
+    } else if(i === currentTask){
+      // Active
+      tb.classList.add('active');
+      ts.textContent = 'RUNNING ●';
+      ts.classList.add('active');
+      tp.style.width = '50%';
+    } else if(i < currentTask || (currentTask === 0 && isRunning === false && taskResults[i-1] !== undefined)){
+      // Completed
+      const ok = taskResults[i-1];
+      tb.classList.add(ok ? 'pass' : 'fail');
+      ts.textContent = ok ? 'PASS ✓' : 'FAIL ✗';
+      ts.classList.add(ok ? 'pass' : 'fail');
+      tp.style.width = '100%';
+    } else {
+      // Waiting
+      ts.textContent = 'Waiting';
+      ts.classList.add('waiting');
+      tp.style.width = '0%';
+    }
+  }
+}
+
+// ── State text ────────────────────────────────────────────────────────────────
+function setStateText(text, cls){
+  const el = $('stateText');
+  el.textContent = text;
+  el.className = 'status-val ' + cls;
+}
+
+// ── Ball ──────────────────────────────────────────────────────────────────────
+function setBall(colorName, picked){
+  ballColor = colorName;
+  $('ballCircle').className = 'ball-circle ' + colorName;
+  const names = {'none':'None','red':'Red','green':'Green','blue':'Blue'};
+  const colors = {'none':'#475569','red':'#ef4444','green':'#22c55e','blue':'#3b82f6'};
+  const nameEl = $('ballName');
+  nameEl.textContent = names[colorName]||'None';
+  nameEl.style.color = colors[colorName]||'#475569';
+  $('ballSub').textContent = colorName==='none' ? 'Searching...' : 'Identified by TCS34725';
+  $('pickedPill').textContent = picked ? 'YES ✓' : '—';
+  $('pickedPill').className = 'pill ' + (picked ? 'ok' : '');
+  if(colorName !== 'none'){
+    const branches = {'red':'Red Branch','green':'Green Branch','blue':'Blue Branch'};
+    $('branchPill').textContent = branches[colorName]||'—';
+    $('branchPill').className = 'pill warn';
+  } else {
+    $('branchPill').textContent = '—';
+    $('branchPill').className = 'pill';
+  }
+}
+
+// ── Start / Stop button ───────────────────────────────────────────────────────
+function toggleComp(){
+  if(isRunning){
+    // Simulate stop
+    isRunning = false;
+    stopTimer();
+    currentTask = 0;
+    setStateText('ABORTED', 'err');
+    $('startBtn').className = 'start-btn go';
+    $('startBtn').textContent = '▶ START COMPETITION';
+    $('fromSel').disabled = false;
+    $('colorSel').disabled = false;
+    renderTimeline();
+    addLog('COMPETITION ABORTED by user', 'lw');
+    $('simStep').textContent = '← Run aborted manually';
+  } else {
+    // Simulate start
+    startFrom = parseInt($('fromSel').value)||1;
+    const colorOverride = parseInt($('colorSel').value)||0;
+    isRunning = true;
+    taskResults = [false,false,false,false];
+    setBall('none', false);
+    startTimer();
+    simulateRun(startFrom, colorOverride);
+    $('startBtn').className = 'start-btn stop';
+    $('startBtn').textContent = '■ EMERGENCY STOP';
+    $('fromSel').disabled = true;
+    $('colorSel').disabled = true;
+    addLog('Competition STARTED from Task '+startFrom, 'lok');
+    $('simStep').textContent = '▶ Competition started from Task '+startFrom;
+  }
+}
+
+// ── Auto-simulate run sequence ────────────────────────────────────────────────
+function simulateRun(from, colorOverride){
+  setStateText('STARTING...', 'running');
+  currentTask = 0;
+  renderTimeline();
+
+  const tasks = [
+    {id:1, name:'Grid Search',  dur:4000, color: colorOverride || 1},  // red ball
+    {id:2, name:'Corridor',     dur:3000},
+    {id:3, name:'Obstacle Push',dur:2500},
+    {id:4, name:'Color Sort',   dur:3500},
+  ];
+  const toRun = tasks.filter(t => t.id >= from);
+  let delay = 800;
+
+  toRun.forEach((task, idx) => {
+    // Start task
+    setTimeout(()=>{
+      if(!isRunning) return;
+      currentTask = task.id;
+      setStateText('TASK '+task.id+' — '+task.name.toUpperCase(), 'running');
+      renderTimeline();
+      addLog('Starting Task '+task.id+': '+task.name, 'li');
+
+      // Ball found in task 1
+      if(task.id === 1){
+        setTimeout(()=>{ if(!isRunning)return; setBall('none',false); },500);
+        setTimeout(()=>{
+          if(!isRunning)return;
+          const cols=['red','green','blue'];
+          const col = cols[(task.color||1)-1];
+          setBall(col, false);
+          addLog('Ball color detected: '+col.toUpperCase(), 'lok');
+        }, task.dur*0.55);
+        setTimeout(()=>{
+          if(!isRunning)return;
+          setBall($('ballCircle').className.split(' ').pop(), true);
+          addLog('Ball PICKED UP successfully', 'lok');
+        }, task.dur*0.8);
+      }
+    }, delay);
+
+    // Complete task
+    delay += task.dur;
+    setTimeout(()=>{
+      if(!isRunning) return;
+      taskResults[task.id-1] = true;
+      addLog('Task '+task.id+' COMPLETE ✓', 'lok');
+      if(idx === toRun.length-1){
+        // All done
+        currentTask = 0;
+        isRunning = false;
+        stopTimer();
+        setStateText('FINISHED 🏆', 'done');
+        renderTimeline();
+        $('startBtn').className = 'start-btn go';
+        $('startBtn').textContent = '▶ START COMPETITION';
+        $('fromSel').disabled = false;
+        $('colorSel').disabled = false;
+        addLog('ALL TASKS COMPLETE — Competition finished!', 'lok');
+        $('svTof').textContent = '—';
+        $('svLine').textContent = '—';
+        $('simStep').textContent = '✅ Full run complete!';
+      }
+    }, delay);
+    delay += 200;
+  });
+}
+
+// ── Arm command ───────────────────────────────────────────────────────────────
+function armCmd(cmd){
+  const resp = $('armResp');
+  const icons = {pick:'🎯',place:'📥',up:'⬆️',down:'⬇️',open:'✋',close:'✊'};
+  resp.className = 'arm-response show';
+  resp.textContent = '>> Sending: '+cmd+'...';
+  addLog('Arm command: '+cmd);
+  setTimeout(()=>{
+    resp.textContent = '<< Gripper: '+(cmd==='open'||cmd==='pick'?'OPEN':'CLOSED')
+      +'  Lift: '+(cmd==='up'?'UP':cmd==='down'?'DOWN':'MID');
+  }, 400);
+  setTimeout(()=>{ resp.className='arm-response'; }, 3000);
+}
+
+// ══ SIMULATOR SCENARIOS ═══════════════════════════════════════════════════════
+function simIdle(){
+  resetState();
+  setStateText('IDLE', 'idle');
+  $('timerText').textContent = '00:00.0';
+  addLog('State set to IDLE', 'li');
+  $('simStep').textContent = '⬛ Idle state — waiting for start';
+}
+
+function simStart(taskId){
+  resetState(true);
+  isRunning = true;
+  startFrom = taskId;
+  currentTask = taskId;
+  elapsedMs = (taskId-1)*18000 + Math.random()*5000;
+  $('timerText').textContent = formatTime(elapsedMs);
+  // Mark previous tasks as passed
+  for(let i=1; i<taskId; i++) taskResults[i-1] = true;
+  setStateText('TASK '+taskId+' RUNNING', 'running');
+  $('startBtn').className = 'start-btn stop';
+  $('startBtn').textContent = '■ EMERGENCY STOP';
+  $('fromSel').disabled = true;
+  $('colorSel').disabled = true;
+  renderTimeline();
+  if(taskId >= 1) setBall('red', taskId>=2);
+  addLog('Simulated Task '+taskId+' active', 'li');
+  $('simStep').textContent = '▶ Task '+taskId+' is currently running';
+  // Start animating sensors
+  timerInterval = setInterval(()=>{ elapsedMs+=100; $('timerText').textContent=formatTime(elapsedMs); animateSensors(); },100);
+}
+
+function simFinished(){
+  resetState();
+  taskResults = [true,true,true,true];
+  setBall('red', true);
+  currentTask = 0;
+  setStateText('FINISHED 🏆', 'done');
+  $('timerText').textContent = '11:42.3';
+  renderTimeline();
+  addLog('Competition FINISHED — all 4 tasks complete!', 'lok');
+  $('simStep').textContent = '✅ All tasks passed — competition complete!';
+}
+
+function simAborted(){
+  resetState();
+  taskResults = [true, true, false, false];
+  currentTask = 0;
+  setBall('green', true);
+  setStateText('ABORTED', 'err');
+  $('timerText').textContent = '07:18.6';
+  renderTimeline();
+  addLog('Run ABORTED — Tasks 1 & 2 passed, Task 3 failed', 'lw');
+  $('simStep').textContent = '🛑 Run aborted during Task 3';
+}
+
+function simBall(color){
+  const ids = {red:1, green:2, blue:3};
+  setBall(color, true);
+  addLog('Ball color set: '+color.toUpperCase()+' (demo)', 'li');
+  $('simStep').textContent = '🎱 Ball color = '+color.charAt(0).toUpperCase()+color.slice(1);
+}
+
+function simTask1Fail(){
+  resetState();
+  taskResults = [false, false, false, false];
+  currentTask = 0;
+  setBall('none', false);
+  setStateText('TASK 1 FAILED', 'err');
+  $('timerText').textContent = '05:30.0';
+  renderTimeline();
+  addLog('Task 1 FAILED — ball not found', 'le-err');
+  $('simStep').textContent = '❌ Task 1 failed — no ball found in grid';
+}
+
+function simCheckpoint(){
+  resetState();
+  startFrom = 3;
+  currentTask = 3;
+  isRunning = true;
+  taskResults = [false, false, false, false]; // skipped 1&2
+  setBall('blue', true);
+  elapsedMs = 0;
+  setStateText('TASK 3 RUNNING (Checkpoint)', 'running');
+  $('startBtn').className = 'start-btn stop';
+  $('startBtn').textContent = '■ EMERGENCY STOP';
+  $('fromSel').disabled = true;
+  $('colorSel').disabled = true;
+  renderTimeline();
+  addLog('Checkpoint restart from Task 3 — Ball=BLUE', 'lw');
+  $('simStep').textContent = '↩️ Checkpoint restart: starting from Task 3 with blue ball';
+  timerInterval = setInterval(()=>{ elapsedMs+=100; $('timerText').textContent=formatTime(elapsedMs); animateSensors(); },100);
+}
+
+function resetState(keepRunning){
+  if(!keepRunning){
+    isRunning = false;
+    $('startBtn').className = 'start-btn go';
+    $('startBtn').textContent = '▶ START COMPETITION';
+    $('fromSel').disabled = false;
+    $('colorSel').disabled = false;
+  }
+  stopTimer();
+  currentTask = 0;
+  startFrom = 1;
+  taskResults = [false,false,false,false];
+  setBall('none',false);
+  renderTimeline();
+  $('svTof').textContent='342'; $('svTof').style.color='var(--grn)';
+  $('svLine').textContent='+3.2'; $('svLine').style.color='var(--ac)';
+  $('svJunc').textContent='None'; $('svJunc').style.color='#475569';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+addLog('RUNNER-4 Competition Dashboard loaded', 'lok');
+addLog('Use the simulator above to preview all states', 'li');
+setStateText('IDLE','idle');
+renderTimeline();
+</script>
+</body>
+</html>

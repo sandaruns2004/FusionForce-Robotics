@@ -1,15 +1,15 @@
 #pragma once
 // =============================================================================
 // tof_sensor.h  -  Single VL53L0X Time-of-Flight sensor  (NON-BLOCKING)
-//   One sensor at default I2C address 0x29 (no XSHUT remapping needed).
+//   One VL53L0X on the main I2C bus; color sensor uses a separate bus.
 //
-//   I2C bus: SDA=GPIO11, SCL=GPIO12  (same bus as PCA9685 & TCS34725 in main)
+//   I2C bus: SDA=GPIO11, SCL=GPIO12 (shared with PCA9685 only).
 //   Wire.begin(11, 12, 400000) must be called in setup() BEFORE tofBegin().
 //
-//   IMPORTANT â€” non-blocking design:
+//   IMPORTANT — non-blocking design:
 //     Sensor runs in CONTINUOUS mode.  tofPoll() calls
 //     readRangeContinuousMillimeters() which returns the last completed
-//     result instantly â€” it never blocks.  The rolling median is built
+//     result instantly — it never blocks.  The rolling median is built
 //     across multiple poll() calls rather than inside one blocking loop.
 //
 //   Web routes registered by tofBegin():
@@ -26,15 +26,17 @@
 // ---- Filter / timing settings -----------------------------------------------
 #define TOF_MAX_VALID_MM      1200
 // Timing budget only affects sensor accuracy; in continuous mode the MCU
-// never waits for it â€” the sensor measures autonomously.
+// never waits for it — the sensor measures autonomously.
 #define TOF_TIMING_BUDGET     33000   // us  (33 ms ~= 30 Hz, fast mode)
 #define TOF_MEDIAN_WIN        5       // rolling median window size (odd)
 #define TOF_POLL_INTERVAL_MS  40      // min ms between poll() reads (guard)
 
-// VL53L0X is relocated from its boot address (0x29) to this address so the
-// TCS34725 colour sensor can use 0x29 without conflict.
+// VL53L0X is moved from boot address 0x29 to this runtime address.
 // MUST match what is used in tofBegin() setAddress() call.
 #define TOF_I2C_ADDR          0x30
+#ifndef TOF_FRONT_XSHUT_PIN
+#define TOF_FRONT_XSHUT_PIN   13      // Front VL53L0X XSHUT hardware reset pin
+#endif
 
 
 // =============================================================================
@@ -51,7 +53,7 @@ bool  tofOnline();
 // =============================================================================
 #ifdef TOF_IMPLEMENTATION
 
-#include "tof_page.h"   // TOF_HTML PROGMEM string
+#include "../dashboard/tof_page.h"   // TOF_HTML PROGMEM string
 
 static VL53L0X _tofSensor;
 static bool    _tofOk = false;
@@ -75,7 +77,7 @@ static float _piecewise(float raw) {
     return v < 0 ? 0 : v;
 }
 
-// ---- Rolling median filter (non-blocking â€” accumulates across poll calls) ---
+// ---- Rolling median filter (non-blocking — accumulates across poll calls) ---
 static uint16_t _medBuf[TOF_MEDIAN_WIN];
 static uint8_t  _medIdx  = 0;
 static uint8_t  _medFill = 0;  // how many slots have been filled
@@ -112,19 +114,16 @@ void tofBegin(WebServer &server, const char *apSsid) {
     // Wire bus (GPIO 11 SDA, GPIO 12 SCL) already started in setup() - do NOT
     // call Wire.begin() here again.
     //
-    // ADDRESS CONFLICT FIX:
-    //   VL53L0X default address = 0x29 (same as TCS34725 colour sensor).
-    //   We MUST call tofBegin() BEFORE colorBegin() in setup() so the VL53L0X
-    //   is the only device at 0x29. After init we immediately relocate it to
-    //   TOF_I2C_ADDR (0x30), freeing 0x29 for the colour sensor.
+    // Color sensor is on a physically separate I2C controller, so the VL53L0X
+    // can initialize at 0x29 without bus contention.
     _tofSensor.setTimeout(500);
     if (_tofSensor.init()) {
-        // Relocate VL53L0X from 0x29 â†’ TOF_I2C_ADDR BEFORE colour sensor init.
+        // Move VL53L0X to its runtime address on the main bus.
         _tofSensor.setAddress(TOF_I2C_ADDR);
-        // Fast timing budget â€” sensor measures autonomously in continuous mode.
+        // Fast timing budget — sensor measures autonomously in continuous mode.
         _tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
         // Continuous mode: sensor produces readings on its own.
-        // tofPoll() just reads the latest completed result â€” no blocking.
+        // tofPoll() just reads the latest completed result — no blocking.
         _tofSensor.startContinuous();
         _tofOk = true;
         Serial.printf("[TOF] VL53L0X detected at 0x29, relocated to 0x%02X - continuous mode ON\n", TOF_I2C_ADDR);
@@ -132,7 +131,6 @@ void tofBegin(WebServer &server, const char *apSsid) {
         _tofOk = false;
         Serial.println("[TOF] VL53L0X NOT FOUND at 0x29");
         Serial.println("[TOF] Check: SDA=GPIO11, SCL=GPIO12, VIN=3.3V, 4.7k pullups");
-        Serial.println("[TOF] Ensure tofBegin() is called BEFORE colorBegin() in setup()");
     }
 
 
@@ -155,7 +153,7 @@ void tofBegin(WebServer &server, const char *apSsid) {
 }
 
 // ---------------------------------------------------------------------------
-// tofPoll() â€” truly non-blocking.
+// tofPoll() — truly non-blocking.
 //
 // VL53L0X is in continuous mode, so the sensor keeps measuring on its own.
 // readRangeContinuousMillimeters() returns the LAST completed result instantly
@@ -172,7 +170,7 @@ void tofPoll() {
     uint16_t raw = _tofSensor.readRangeContinuousMillimeters();
 
     if (_tofSensor.timeoutOccurred() || raw >= TOF_MAX_VALID_MM) {
-        // Bad reading â€” keep previous filtered output, don't update buffer
+        // Bad reading — keep previous filtered output, don't update buffer
         return;
     }
 

@@ -30,6 +30,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 .btn-sw:hover{background:rgba(255,255,255,.11)}
 .btn-col{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff}
 .btn-line{background:linear-gradient(135deg,#0891b2,#22d3ee);color:#fff}
+.btn-comp{background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff}
+.btn-comp:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(245,158,11,.4)}
 .layout{display:flex;align-items:flex-start}
 .sidebar{width:210px;flex-shrink:0;background:#161b22;border-right:1px solid #30363d;padding:12px 10px 20px;display:flex;flex-direction:column;gap:5px;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto}
 .sidebar::-webkit-scrollbar{width:4px}
@@ -137,6 +139,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <a class="btn btn-line" href="/linefollow" style="background:linear-gradient(135deg,#0f766e,#2dd4bf)">&#129302; Line Follow</a>
     <a class="btn btn-col" href="/color">&#127912; Colour Sensor</a>
     <a class="btn btn-col" href="/tof" style="background:linear-gradient(135deg,#0e7490,#06b6d4)">&#128225; ToF Sensors</a>
+    <a class="btn btn-comp" href="/comp">&#127942; Competition</a>
     <a class="btn btn-col" href="/health">System Health</a>
     <button class="btn btn-sw" onclick="doSweep()">&#9654; Sweep</button>
     <button class="btn btn-all" onclick="allHome()">&#8962; All HOME</button>

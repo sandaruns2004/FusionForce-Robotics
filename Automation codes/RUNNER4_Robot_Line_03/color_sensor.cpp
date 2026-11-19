@@ -5,8 +5,9 @@
 // All internals are in an anonymous namespace so they cannot clash with the
 // robot code. Public API is in color_sensor.h
 // =============================================================================
-#include "color_sensor.h"
-#include "color_page.h"
+#include "config/robot_config.h"
+#include "sensors/color_sensor.h"
+#include "dashboard/color_page.h"
 #include <Wire.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -15,6 +16,10 @@
 #define TCS_ADDR 0x29
 
 namespace {
+
+// The color sensor is on the ESP32-S3's second I2C controller so its fixed
+// address 0x29 cannot collide with the VL53L0X on the main bus.
+TwoWire colorWire(1);
 
 // ---------------- TCS34725 REGISTERS ----------------
 #define REG_CMD    0x80
@@ -105,15 +110,15 @@ char capMsg[96] = "Ready";
 
 // ---------------- I2C ----------------
 bool wr8(uint8_t reg, uint8_t v) {
-  Wire.beginTransmission(TCS_ADDR); Wire.write(REG_CMD | reg); Wire.write(v);
-  return Wire.endTransmission() == 0;
+  colorWire.beginTransmission(TCS_ADDR); colorWire.write(REG_CMD | reg); colorWire.write(v);
+  return colorWire.endTransmission() == 0;
 }
 bool rdN(uint8_t reg, uint8_t* buf, uint8_t n) {
-  Wire.beginTransmission(TCS_ADDR);
-  Wire.write(REG_CMD | (n > 1 ? REG_AUTO : 0) | reg);
-  if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom((uint8_t)TCS_ADDR, n) != n) return false;
-  for (uint8_t i = 0; i < n; i++) buf[i] = Wire.read();
+  colorWire.beginTransmission(TCS_ADDR);
+  colorWire.write(REG_CMD | (n > 1 ? REG_AUTO : 0) | reg);
+  if (colorWire.endTransmission(false) != 0) return false;
+  if (colorWire.requestFrom((uint8_t)TCS_ADDR, n) != n) return false;
+  for (uint8_t i = 0; i < n; i++) buf[i] = colorWire.read();
   return true;
 }
 
@@ -402,6 +407,8 @@ void handleExport() {   // paste into STM32 tcs34725.c
 // ---------------- PUBLIC API ----------------
 bool colorBegin(WebServer &server, const char *ssid, int sda, int scl) {
   srv = &server; apSsid = ssid; sdaPin = sda; sclPin = scl;
+  colorWire.begin(sdaPin, sclPin, 400000);
+  colorWire.setTimeOut(50);
   pinMode(COLOR_LED_PIN, OUTPUT); digitalWrite(COLOR_LED_PIN, LOW);
   loadCfg();
   sensorOK = sensorInit();

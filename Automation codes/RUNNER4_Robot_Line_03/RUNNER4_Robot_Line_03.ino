@@ -1,5 +1,5 @@
 // =============================================================================
-// FusionForce RUNNER4 — 12 DOF Quadruped Robot
+// FusionForce RUNNER4 � 12 DOF Quadruped Robot
 // MAIN ROOT : PCA9685 servo control + pose presets + FK/IK + walk/turn gaits
 // MODULES   : TCS34725 colour sensor (color_sensor.cpp/.h/color_page.h)
 //             9x TCRT5000 line array (line_sensor.cpp/.h/line_page.h)
@@ -7,7 +7,7 @@
 //             3x VL53L0X ToF distance sensors (tof_sensor.h/tof_page.h)
 //             RGB LED status indicator (GPIO 16=Red, 17=Green, 18=Blue)
 // BOARD     : ESP32-S3
-// VERSION   : 6.1  (ToF sensors + RGB LED status indicator)
+// VERSION   : 7.0  (Competition FSM + arm interface + nav primitives)
 // =============================================================================
 //
 // WEB ROUTES (one WiFi AP, one web server)
@@ -30,12 +30,16 @@
 //   line_page.h                <- line array web page
 //
 // WIRING (v5.0 PIN MAP - ADC1 only, because WiFi AP blocks ADC2 on ESP32-S3)
-//   I2C (PCA9685 0x40 + TCS34725 0x29, shared bus):
-//     GPIO 11 (SDA) -> PCA9685 SDA  and  TCS34725 SDA
-//     GPIO 12 (SCL) -> PCA9685 SCL  and  TCS34725 SCL
-//     3.3V / GND    -> PCA9685 VCC/GND and TCS34725 VIN/GND
-//   TCS34725 LED pin : GPIO 15  (change COLOR_LED_PIN in color_sensor.h)
-//   Line array (TCRT5000 analog outputs, S1 far LEFT ... S9 far RIGHT, 3.3V
+//   Main I2C0 (PCA9685 0x40 + VL53L0X ToF):
+//     GPIO 11 (SDA) -> PCA9685 SDA and VL53L0X SDA
+//     GPIO 12 (SCL) -> PCA9685 SCL and VL53L0X SCL
+//     GPIO 13       -> VL53L0X Front XSHUT (active-LOW reset)
+//     3.3V / GND    -> PCA9685 VCC / VL53L0X VIN and common GND
+//   Color I2C1 (TCS34725 0x29 - separate hardware I2C controller):
+//     GPIO 41 (SDA) -> TCS34725 SDA
+//     GPIO 42 (SCL) -> TCS34725 SCL
+//     GPIO 15       -> TCS34725 LED control (HIGH = white LED on)
+//     3.3V / GND    -> TCS34725 VIN and common GND//   Line array (TCRT5000 analog outputs, S1 far LEFT ... S9 far RIGHT, 3.3V
 //   ONLY):
 //     S1=GPIO1  S2=GPIO2  S3=GPIO4  S4=GPIO5  S5=GPIO6
 //     S6=GPIO7  S7=GPIO8  S8=GPIO9  S9=GPIO10
@@ -60,6 +64,7 @@
 //   CH 6:BR_HIP  CH 8:BR_FEMUR  CH 9:BR_TIBIA
 // =============================================================================
 
+#include "config/robot_config.h" // Centralized pins, constants, WiFi
 #include <Adafruit_PWMServoDriver.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -68,34 +73,32 @@
 #include <limits.h>
 #include <math.h>
 
-#include "color_sensor.h" // colour module API
-#include "line_follow.h"  // line-following gait + /linefollow web page
-#include "line_sensor.h"  // line array module API
-#include "robot_page.h"   // INDEX_HTML
+
+#include "gait/kinematics.h"        // 3-DOF FK and IK solvers
+#include "gait/servo_controller.h"   // PCA9685 driver, channel map, pose presets & interpolation
+#include "gait/trot_gait.h"          // 6-phase diagonal trot gait (walk, turn, sweep)
+#include "sensors/color_sensor.h"    // colour module API
+#include "sensors/line_sensor.h"     // line array module API
+#include "gait/line_follow.h"        // line-following gait + /linefollow web page
+#include "dashboard/robot_page.h"    // INDEX_HTML
+
 
 // ToF sensor module (header-only implementation)
 #define TOF_IMPLEMENTATION
-#include "tof_sensor.h" // 3x VL53L0X + /tof web page
+#include "sensors/tof_sensor.h" // 3x VL53L0X + /tof web page
 
-struct Vec3f {
-  float x, y, z;
-};
+// Competition state machine (includes nav_primitives, arm_interface,
+// grid_search, wall_follow, obstacle_push, color_sort)
+#include "tasks/competition_fsm.h"
 
-// ── WiFi AP ──────────────────────────────────────────────────────────────────
-const char *AP_SSID = "RUNNER4-Config";
-const char *AP_PASS = "runner4robot";
+// Vec3f, FK and IK moved to gait/kinematics.h
 
-// ── I2C (shared by PCA9685, TCS34725, and VL53L0X sensors) ──────────────────
-#define I2C_SDA 11
-#define I2C_SCL 12
-#define I2C_HZ 400000
+// I2C pins defined in config/robot_config.h
 
-// ── RGB LED (common-cathode: HIGH = ON)
-// ─────────────────────────────────────── Wiring: GPIO -> 330ohm resistor ->
+// -- RGB LED (common-cathode: HIGH = ON)
+// --------------------------------------- Wiring: GPIO -> 330ohm resistor ->
 // LED leg -> GND (common cathode)
-constexpr uint8_t RGB_RED_PIN = 16;
-constexpr uint8_t RGB_GREEN_PIN = 17;
-constexpr uint8_t RGB_BLUE_PIN = 18;
+// RGB LED pins defined in config/robot_config.h
 
 void setRgb(bool red, bool green, bool blue) {
   digitalWrite(RGB_RED_PIN, red ? HIGH : LOW);
@@ -122,123 +125,8 @@ void updateColorLed() {
   }
 }
 
-// ── PCA9685 ──────────────────────────────────────────────────────────────────
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
-#define SERVOMIN 150
-#define SERVOMAX 600
-#define SERVO_FREQ 50
-
-// ── Leg geometry (mm) ────────────────────────────────────────────────────────
-#define L1_MM 30.0f
-#define L2_MM 60.0f
-#define L3_MM 80.0f
-
-// ── Channels ─────────────────────────────────────────────────────────────────
-#define FL_HIP 0
-#define FL_FEMUR 1
-#define FL_TIBIA 2
-#define FR_HIP 3
-#define FR_FEMUR 4
-#define FR_TIBIA 5
-#define BL_HIP 10
-#define BL_FEMUR 11
-#define BL_TIBIA 14
-#define BR_HIP 6
-#define BR_FEMUR 8
-#define BR_TIBIA 9
-
-// legChannels[leg][0=hip,1=femur,2=tibia]; leg 0=FL 1=FR 2=BL 3=BR
-const uint8_t legChannels[4][3] = {{FL_HIP, FL_FEMUR, FL_TIBIA},
-                                   {FR_HIP, FR_FEMUR, FR_TIBIA},
-                                   {BL_HIP, BL_FEMUR, BL_TIBIA},
-                                   {BR_HIP, BR_FEMUR, BR_TIBIA}};
-const int legMirror[4] = {1, -1, 1, -1};
-
-// ── Pose presets [pose][leg][hip,femur,tibia] — editable from the web UI ─────
-int poseAngles[13][4][3] = {
-    // 0 INITIAL (HOME)
-    {{45, 80, 160}, {94, 80, 0}, {94, 35, 10}, {45, 92, 160}},
-    // 1 STANDING
-    {{45, 15, 105}, {94, 140, 50}, {94, 94, 55}, {45, 37, 115}},
-    // 2 LOW CROUCH
-    {{45, 110, 140}, {94, 110, 40}, {94, 110, 140}, {45, 110, 140}},
-    // 3 LOW STAND
-    {{45, 29, 119}, {94, 112, 30}, {94, 86, 40}, {45, 62, 130}},
-    // 4 FL LEG UP
-    {{45, 38, 115}, {94, 125, 35}, {94, 101, 45}, {45, 80, 160}},
-    // 5 FR LEG UP
-    {{45, 80, 160}, {94, 55, 20}, {94, 56, 160}, {45, 92, 160}},
-    // 6 TROT A
-    {{45, 60, 120}, {94, 80, 0}, {94, 56, 160}, {45, 72, 140}},
-    // 7 TROT B
-    {{45, 80, 160}, {94, 55, 20}, {94, 36, 130}, {45, 92, 160}},
-    // 8 STRETCH
-    {{45, 90, 90}, {94, 90, 90}, {94, 90, 90}, {45, 90, 90}},
-    // 9 WALK A basic
-    {{15, 45, 115}, {94, 135, 45}, {94, 111, 55}, {75, 57, 115}},
-    // 10 WALK B basic
-    {{15, 20, 115}, {124, 115, 45}, {64, 91, 55}, {75, 32, 115}},
-    // 11 WALK A enhanced
-    {{15, 45, 130}, {94, 135, 45}, {94, 111, 55}, {75, 57, 130}},
-    // 12 WALK B enhanced
-    {{15, 20, 115}, {124, 115, 30}, {64, 91, 30}, {75, 32, 115}}};
-#define POSE_COUNT 13
-
-// =============================================================================
-// GAIT SETTINGS: change these numbers to tune walking and turning
-// =============================================================================
-// Leg order everywhere: 0=FL  1=FR  2=BL  3=BR
-
-// ---- WALK ----
-int WALK_HIP_DELTA = 30;   // hip swing, degrees (45->15 = 30)
-int WALK_FEMUR_DELTA = 25; // femur lift, degrees
-
-// Optional per-leg femur correction. The original code lifted FR by 15, not 25,
-// so FR is -10. Set all four to 0 for an identical lift on every leg.
-const int WALK_FEMUR_TRIM[4] = {0, 0, 0, 0};
-
-// ---- TURN ----
-int TURN_HIP_DELTA = 20;   // hip swing, degrees (same on all 4 legs)
-int TURN_FEMUR_DELTA = 20; // femur lift, degrees
-
-// ---- Signs and base values (change only if you remount or recalibrate servos)
-// Hip swing direction while walking: FL -, FR +, BL -, BR +
-const int WALK_HIP_SIGN[4] = {-1, +1, -1, +1};
-// Hip direction while turning: all legs share one sign (right = -1, left = +1)
-// Femur lift direction: FL +, FR -, BL -, BR +
-const int FEMUR_LIFT_SIGN[4] = {+1, -1, -1, +1};
-
-// ---- Gait follows the STANDING pose (pose 1) ----
-// Change the STANDING angles (in the poseAngles table, or from the web page)
-// and the walk/turn gaits follow automatically. The offsets below are the
-// difference between STANDING and the original gait angles, so with the
-// default STANDING angles the gait is exactly the same as before.
-// Leg order: FL, FR, BL, BR
-const int WALK_FEM_OFFSET[4] = {0, 0, 0, 0};
-const int TURN_FEM_OFFSET[4] = {0, 0, 0, 0};
-const int GAIT_TIB_OFFSET[4] = {0, 0, 0, 0};
-
-// Filled by syncGaitBase() from poseAngles[1] each time a gait starts
-int WALK_HIP_BASE[4], WALK_FEM_PLANT[4];
-int TURN_HIP_BASE[4], TURN_FEM_PLANT[4];
-int GAIT_TIBIA[4];
-
-void syncGaitBase() {
-  for (int l = 0; l < 4; l++) {
-    WALK_HIP_BASE[l] = TURN_HIP_BASE[l] = poseAngles[1][l][0];
-    WALK_FEM_PLANT[l] = poseAngles[1][l][1] + WALK_FEM_OFFSET[l];
-    TURN_FEM_PLANT[l] = poseAngles[1][l][1] + TURN_FEM_OFFSET[l];
-    GAIT_TIBIA[l] = poseAngles[1][l][2] + GAIT_TIB_OFFSET[l];
-  }
-}
-
-// Leg bit masks
-#define M_FL 1
-#define M_FR 2
-#define M_BL 4
-#define M_BR 8
-
-int servoAngles[16] = {0};
+// 12-DOF servo driver, pose presets, channel map moved to gait/servo_controller.h
+// Walk & turn gait parameters moved to gait/trot_gait.h
 
 WebServer server(80);
 bool serverStarted = false;
@@ -265,7 +153,7 @@ void onWiFiEvent(WiFiEvent_t event) {
 }
 
 // =============================================================================
-// JOB SYSTEM — handlers queue work, loop() executes it
+// JOB SYSTEM � handlers queue work, loop() executes it
 // =============================================================================
 enum Job : uint8_t {
   JOB_NONE,
@@ -275,8 +163,9 @@ enum Job : uint8_t {
   JOB_WALK,
   JOB_TURN,
   JOB_SWEEP,
-  JOB_CRAWL,     // = 7  (used by crawl_gait.h)
-  JOB_LINEFOLLOW // = 8  (used by line_follow.h)
+  JOB_CRAWL,      // = 7  (used by crawl_gait.h)
+  JOB_LINEFOLLOW, // = 8  (used by line_follow.h)
+  JOB_COMPETITION // = 9  (used by competition_fsm.h)
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
@@ -299,20 +188,20 @@ int lfStepsTarget = 0, lfStepsDone = 0;
 char lfPhaseStr[48] = "";
 
 // =============================================================================
-// BACKGROUND SERVICE — called from every wait inside motion code
+// BACKGROUND SERVICE � called from every wait inside motion code
 // =============================================================================
 // Rate-limit server.handleClient() to at most once per WEB_SERVE_INTERVAL_MS.
 // Previously it was called on every servo step (up to 180 times per
 // moveToTarget call), which caused 20-50 ms HTTP processing to stall motion.
-#define WEB_SERVE_INTERVAL_MS 20   // serve HTTP at most every 20 ms
-#define LED_UPDATE_INTERVAL_MS 50  // update RGB LED at most every 50 ms
+// WEB_SERVE_INTERVAL_MS=20 / LED_UPDATE_INTERVAL_MS=50 defined in
+// config/robot_config.h  // update RGB LED at most every 50 ms
 
-static uint32_t _lastServeMs  = 0;
-static uint32_t _lastLedMs    = 0;
+static uint32_t _lastServeMs = 0;
+static uint32_t _lastLedMs = 0;
 
 void serviceBackground() {
   uint32_t now = millis();
-  // Throttled HTTP serving — prevents motion stutter from HTTP processing
+  // Throttled HTTP serving � prevents motion stutter from HTTP processing
   if (serverStarted && (now - _lastServeMs >= WEB_SERVE_INTERVAL_MS)) {
     server.handleClient();
     _lastServeMs = millis(); // re-read after handleClient (it may take time)
@@ -333,160 +222,34 @@ void waitMs(uint32_t ms) {
   do {
     serviceBackground();
     uint32_t elapsed = millis() - t0;
-    if (elapsed >= ms) break;
+    if (elapsed >= ms)
+      break;
     // Small sleep only if we have more than 1ms left, avoids busy-spin
     uint32_t remaining = ms - elapsed;
-    if (remaining > 1) delay(1);
+    if (remaining > 1)
+      delay(1);
   } while (true);
 }
 
-// =============================================================================
-// SERVO HELPERS
-// =============================================================================
-uint16_t angleToPulse(int angle) {
-  angle = constrain(angle, 0, 180);
-  return (uint16_t)map(angle, 0, 180, SERVOMIN, SERVOMAX);
-}
-
-void setServo(uint8_t ch, int angle) {
-  angle = constrain(angle, 0, 180);
-  servoAngles[ch] = angle;
-  pwm.setPWM(ch, 0, angleToPulse(angle));
-}
-
-void setAllServosHome() {
-  Serial.println("[HOME] All 12 servos -> INITIAL pose");
-  for (int leg = 0; leg < 4; leg++)
-    for (int joint = 0; joint < 3; joint++) {
-      setServo(legChannels[leg][joint], poseAngles[0][leg][joint]);
-      waitMs(10); // stagger to reduce current spike
-    }
-}
-
-void setLegHome(int leg) {
-  for (int joint = 0; joint < 3; joint++)
-    setServo(legChannels[leg][joint], poseAngles[0][leg][joint]);
-}
-
-// Linear interpolation of all 12 servos over speedMs (0 = instant)
-//
-// PERFORMANCE FIX: Previously iterated once per degree of max travel (up to
-// 180 steps) and called waitMs() / serviceBackground() every step, causing
-// HTTP requests to stall the motion.  Now:
-//  - Instant mode (speedMs==0): writes all servos at once, ONE serviceBackground
-//    call at the end to keep sensors alive.
-//  - Timed mode: uses a fixed number of interpolation steps (max 30) capped at
-//    one step per ~speedMs/30 ms, so server.handleClient() runs at most ~30
-//    times per phase instead of 180.
-void moveToTarget(const int targetAngles[4][3], int speedMs) {
-  if (speedMs <= 0) {
-    // Instant: write all 12 servos immediately, no per-joint delay
-    for (int leg = 0; leg < 4; leg++)
-      for (int joint = 0; joint < 3; joint++)
-        setServo(legChannels[leg][joint], targetAngles[leg][joint]);
-    serviceBackground(); // single background tick after all writes
-    return;
-  }
-
-  // Compute max angular travel to decide number of steps
-  int maxDiff = 0;
-  for (int leg = 0; leg < 4; leg++)
-    for (int joint = 0; joint < 3; joint++) {
-      int diff = abs(targetAngles[leg][joint] -
-                     servoAngles[legChannels[leg][joint]]);
-      if (diff > maxDiff) maxDiff = diff;
-    }
-  if (maxDiff == 0) return;
-
-  // Cap interpolation steps: no more than 30 (was up to 180).
-  // Each step is at least speedMs/30 ms apart, so motion time is preserved.
-  const int MAX_STEPS = 30;
-  int nSteps = (maxDiff < MAX_STEPS) ? maxDiff : MAX_STEPS;
-
-  int startAngles[16];
-  memcpy(startAngles, servoAngles, sizeof(servoAngles));
-  unsigned long moveStart = millis();
-
-  for (int step = 1; step <= nSteps; step++) {
-    float t = (float)step / (float)nSteps;
-    for (int leg = 0; leg < 4; leg++)
-      for (int joint = 0; joint < 3; joint++) {
-        uint8_t ch = legChannels[leg][joint];
-        setServo(ch, startAngles[ch] +
-                         (int)roundf(t * (targetAngles[leg][joint] -
-                                         startAngles[ch])));
-      }
-    // Wait until this step's scheduled time, running background tasks
-    unsigned long stepTarget =
-        moveStart + (unsigned long)((long)speedMs * step / nSteps);
-    unsigned long now = millis();
-    if (stepTarget > now)
-      waitMs(stepTarget - now);
-    else
-      serviceBackground();
-  }
-}
-
-void moveToPose(int id, int speedMs) {
-  if (id < 0 || id >= POSE_COUNT)
-    return;
-  moveToTarget(poseAngles[id], speedMs);
-}
-
-// =============================================================================
-// KINEMATICS
-// =============================================================================
-Vec3f computeFK(int hipDeg, int femurDeg, int tibiaDeg, int mirror) {
-  const float a1 = (hipDeg - 90) * DEG_TO_RAD;
-  const float a2 = (femurDeg - 90) * DEG_TO_RAD;
-  const float a3 = (tibiaDeg - 90) * DEG_TO_RAD;
-  const float reach = L1_MM + L2_MM * cosf(a2) + L3_MM * cosf(a2 + a3);
-  Vec3f p;
-  p.x = reach * cosf(a1);
-  p.y = reach * sinf(a1) * (float)mirror;
-  p.z = L2_MM * sinf(a2) + L3_MM * sinf(a2 + a3);
-  return p;
-}
-
-bool computeIK(float px, float py, float pz, int mirror, int *hipOut,
-               int *femurOut, int *tibiaOut) {
-  py *= (float)mirror;
-  const float a1 = atan2f(py, px);
-  const float r = sqrtf(px * px + py * py) - L1_MM;
-  const float d = sqrtf(r * r + pz * pz);
-  if (d > L2_MM + L3_MM - 0.5f || d < fabsf(L2_MM - L3_MM) + 0.5f)
-    return false;
-  float cosA3 = constrain((d * d - L2_MM * L2_MM - L3_MM * L3_MM) /
-                              (2.0f * L2_MM * L3_MM),
-                          -1.0f, 1.0f);
-  const float a3 = acosf(cosA3);
-  const float a2 =
-      atan2f(pz, r) - atan2f(L3_MM * sinf(a3), L2_MM + L3_MM * cosf(a3));
-  int hip = (int)roundf(a1 * RAD_TO_DEG) + 90;
-  int femur = (int)roundf(a2 * RAD_TO_DEG) + 90;
-  int tibia = (int)roundf(a3 * RAD_TO_DEG) + 90;
-  if (hip < 0 || hip > 180 || femur < 0 || femur > 180 || tibia < 0 ||
-      tibia > 180)
-    return false;
-  *hipOut = hip;
-  *femurOut = femur;
-  *tibiaOut = tibia;
-  return true;
-}
+// Servo helpers (setServo, moveToTarget, moveToPose) -> gait/servo_controller.h
+// Kinematics (computeFK, computeIK) -> gait/kinematics.h
 
 void i2cScan() {
   Serial.println("-------------------------------------------------");
-  Serial.println("I2C Bus Scan (expect 0x29 colour sensor, 0x40 PCA9685):");
+  Serial.println("Main I2C0 Bus Scan (SDA=GPIO 11, SCL=GPIO 12):");
+  Serial.println("  Expected devices: 0x40 (PCA9685), 0x29 (VL53L0X ToF)");
   int found = 0;
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) {
-      Serial.printf("  [OK] 0x%02X\n", addr);
+      Serial.printf("  [OK] Device ACK at 0x%02X%s%s\n", addr,
+                    addr == 0x40 ? " (PCA9685)" : "",
+                    (addr == 0x29 || addr == 0x30) ? " (VL53L0X ToF)" : "");
       found++;
     }
   }
   if (found == 0)
-    Serial.println("  [!!] No I2C devices found!");
+    Serial.println("  [!!] No I2C devices found on Main Bus (check SDA=11, SCL=12)!");
   Serial.println("-------------------------------------------------");
 }
 
@@ -529,197 +292,7 @@ bool rejectIfBusy() {
   return true;
 }
 
-// =============================================================================
-// GAIT POSE BUILDER
-// =============================================================================
-// Build one 4x3 target pose.
-//  swingMask : legs whose hip is moved by hipSign*hipDelta
-//  liftMask  : legs whose femur is moved by femSign*femDelta
-void buildGaitPose(int out[4][3], const int hipBase[4], const int hipSign[4],
-                   int hipDelta, const int femPlant[4], const int femSign[4],
-                   const int femDelta[4], uint8_t swingMask, uint8_t liftMask) {
-  for (int leg = 0; leg < 4; leg++) {
-    out[leg][0] =
-        hipBase[leg] + (((swingMask >> leg) & 1) ? hipSign[leg] * hipDelta : 0);
-    out[leg][1] = femPlant[leg] +
-                  (((liftMask >> leg) & 1) ? femSign[leg] * femDelta[leg] : 0);
-    out[leg][2] = GAIT_TIBIA[leg];
-    out[leg][0] = constrain(out[leg][0], 0, 180);
-    out[leg][1] = constrain(out[leg][1], 0, 180);
-  }
-}
-
-// =============================================================================
-// WALK GAIT (uses WALK_HIP_DELTA and WALK_FEMUR_DELTA)
-// =============================================================================
-void walkForward(int steps, int speedMs, int variant) {
-  syncGaitBase(); // gait follows the STANDING pose
-  walkRunning = true;
-  walkStop = false;
-  walkStepsDone = 0;
-  int totalCycles = (steps == 0) ? INT_MAX : steps;
-
-  int femDelta[4];
-  for (int l = 0; l < 4; l++)
-    femDelta[l] = WALK_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
-
-  // {swingMask, liftMask} for the 6 phases
-  const uint8_t seq[6][2] = {{0, M_FL | M_BR},           // 1: FL&BR femurs lift
-                             {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
-                             {M_FL | M_BR, 0}, // 3: plant FL&BR femurs
-                             {0, M_FR | M_BL}, // 4: FL&BR hips back, FR&BL lift
-                             {M_FR | M_BL, M_FR | M_BL}, // 5: swing FR&BL hips
-                             {M_FR | M_BL, 0}}; // 6: plant FR&BL femurs
-
-  for (int i = 0; i < totalCycles && !walkStop; i++) {
-    for (int p = 0; p < 6 && !walkStop; p++) {
-      int t[4][3];
-      buildGaitPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, WALK_HIP_DELTA,
-                    WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
-                    seq[p][1]);
-      moveToTarget(t, speedMs);
-    }
-    if (walkStop)
-      break;
-    walkStepsDone++;
-    Serial.printf("[WALK] Step %d/%d done\n", walkStepsDone,
-                  (steps == 0) ? -1 : steps);
-  }
-  moveToPose(1, 500); // Return to STANDING pose
-  walkRunning = false;
-  Serial.printf("[WALK] Complete. Steps=%d Variant=%s\n", walkStepsDone,
-                variant == 0 ? "Basic" : "Enhanced");
-}
-
-// =============================================================================
-// TURN GAIT (uses TURN_HIP_DELTA and TURN_FEMUR_DELTA)
-// =============================================================================
-// void turnGait(int steps, int speedMs, bool rightTurn) {
-//   syncGaitBase(); // gait follows the STANDING pose
-//   turnRunning = true;
-//   turnStop = false;
-//   turnStepsDone = 0;
-//   strncpy(turnDirection, rightTurn ? "right" : "left",
-//   sizeof(turnDirection));
-
-//   const int dir = rightTurn ? -1 : +1;
-//   const int turnHipSign[4] = {dir, dir, dir, dir};
-//   const int femDelta[4] = {TURN_FEMUR_DELTA, TURN_FEMUR_DELTA,
-//   TURN_FEMUR_DELTA,
-//                            TURN_FEMUR_DELTA};
-
-//   const uint8_t seq[5][2] = {{0, M_FL | M_BR},                         // A
-//                              {M_FL | M_BR, M_FL | M_BR},               // B
-//                              {M_FL | M_BR, M_FR | M_BL},               // C
-//                              {M_FL | M_FR | M_BL | M_BR, M_FR | M_BL}, // D
-//                              {M_FR | M_BL, M_FL | M_BR}};              // E
-//   const char *names[5] = {"A: FL+BR lift", "B: FL+BR swing",
-//                           "C: FL+BR plant / FR+BL lift", "D: FR+BL swing",
-//                           "E: FR+BL plant / FL+BR lift"};
-
-//   for (int i = 0; i < steps && !turnStop; i++) {
-//     for (int p = 0; p < 5 && !turnStop; p++) {
-//       strncpy(turnPhaseStr, names[p], sizeof(turnPhaseStr));
-//       int t[4][3];
-//       buildGaitPose(t, TURN_HIP_BASE, turnHipSign, TURN_HIP_DELTA,
-//                     TURN_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
-//                     seq[p][1]);
-//       moveToTarget(t, speedMs);
-//     }
-//     if (turnStop)
-//       break;
-//     turnStepsDone++;
-//     Serial.printf("[TURN] %s step %d/%d done\n", rightTurn ? "Right" :
-//     "Left",
-//                   turnStepsDone, steps);
-//   }
-//   strncpy(turnPhaseStr, "done", sizeof(turnPhaseStr));
-//   moveToPose(1, 500); // Return to STANDING pose
-//   turnRunning = false;
-//   Serial.printf("[TURN] %s complete. Steps=%d\n", rightTurn ? "Right" :
-//   "Left",
-//                 turnStepsDone);
-// }
-
-void sweepTest() {
-  Serial.println("[SWEEP] BR FEMUR (CH8): 0 -> 90 -> 0");
-  for (int a = 0; a <= 90; a++) {
-    setServo(BR_FEMUR, a);
-    waitMs(15);
-  }
-  waitMs(200);
-  for (int a = 90; a >= 0; a--) {
-    setServo(BR_FEMUR, a);
-    waitMs(15);
-  }
-  waitMs(200);
-  setLegHome(3);
-  Serial.println("[SWEEP] Done.");
-}
-
-// =============================================================================
-// TURN GAIT (uses TURN_HIP_DELTA and TURN_FEMUR_DELTA)
-// Replace the whole old turnGait() function with this one.
-//
-// Start: go to STANDING pose, then repeat the 6 phases below.
-//   1. lift FL&BR femurs (FR&BL hips return to base)
-//   2. swing FL&BR hips
-//   3. put down FL&BR femurs
-//   4. lift FR&BL femurs while FL&BR hips return to base
-//   5. swing FR&BL hips
-//   6. put down FR&BL femurs
-//   (next cycle) 1. lift FL&BR femurs while FR&BL hips return to base
-//                2. swing FL&BR hips ...
-// =============================================================================
-void turnGait(int steps, int speedMs, bool rightTurn) {
-  syncGaitBase(); // gait follows the STANDING pose
-  turnRunning = true;
-  turnStop = false;
-  turnStepsDone = 0;
-  strncpy(turnDirection, rightTurn ? "right" : "left", sizeof(turnDirection));
-
-  const int dir = rightTurn ? -1 : +1;
-  const int turnHipSign[4] = {dir, dir, dir, dir};
-  const int femDelta[4] = {TURN_FEMUR_DELTA, TURN_FEMUR_DELTA, TURN_FEMUR_DELTA,
-                           TURN_FEMUR_DELTA};
-
-  // {swingMask, liftMask} for the 6 phases
-  const uint8_t seq[6][2] = {
-      {0, M_FL | M_BR},           // 1: FL&BR lift, all hips at base
-      {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
-      {M_FL | M_BR, 0},           // 3: put down FL&BR femurs
-      {0, M_FR | M_BL},           // 4: FR&BL lift, FL&BR hips return to base
-      {M_FR | M_BL, M_FR | M_BL}, // 5: swing FR&BL hips
-      {M_FR | M_BL, 0}};          // 6: put down FR&BL femurs
-  const char *names[6] = {
-      "1: FL+BR lift / FR+BL back", "2: FL+BR swing", "3: FL+BR put down",
-      "4: FR+BL lift / FL+BR back", "5: FR+BL swing", "6: FR+BL put down"};
-
-  // First go to the STANDING pose
-  strncpy(turnPhaseStr, "standing", sizeof(turnPhaseStr));
-  moveToPose(1, 500);
-
-  for (int i = 0; i < steps && !turnStop; i++) {
-    for (int p = 0; p < 6 && !turnStop; p++) {
-      strncpy(turnPhaseStr, names[p], sizeof(turnPhaseStr));
-      int t[4][3];
-      buildGaitPose(t, TURN_HIP_BASE, turnHipSign, TURN_HIP_DELTA,
-                    TURN_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
-                    seq[p][1]);
-      moveToTarget(t, speedMs);
-    }
-    if (turnStop)
-      break;
-    turnStepsDone++;
-    Serial.printf("[TURN] %s step %d/%d done\n", rightTurn ? "Right" : "Left",
-                  turnStepsDone, steps);
-  }
-  strncpy(turnPhaseStr, "done", sizeof(turnPhaseStr));
-  moveToPose(1, 500); // Return to STANDING pose
-  turnRunning = false;
-  Serial.printf("[TURN] %s complete. Steps=%d\n", rightTurn ? "Right" : "Left",
-                turnStepsDone);
-}
+// Gait builders and walk/turn/sweep gaits moved to gait/trot_gait.h
 
 // Runs one queued job (called from loop only)
 void runPendingJob() {
@@ -751,6 +324,9 @@ void runPendingJob() {
     break;
   case JOB_LINEFOLLOW:
     lineFollowWalk(jobSteps, jobSpeed);
+    break;
+  case JOB_COMPETITION:
+    runCompetition(jobSteps); // jobSteps = checkpoint (1-4)
     break;
   default:
     break;
@@ -864,7 +440,7 @@ void hIK() {
   Serial.printf("[IK] Leg %d -> H:%d F:%d T:%d\n", leg, hip, femur, tibia);
 }
 
-// GET /pose?id=N&speed=ms — response first, move in loop()
+// GET /pose?id=N&speed=ms � response first, move in loop()
 void hPose() {
   if (!server.hasArg("id")) {
     server.send(400, "application/json", "{\"error\":\"missing id\"}");
@@ -887,7 +463,7 @@ void hPose() {
   pendingJob = JOB_POSE;
 }
 
-// GET /savepose?id=N&a00=..  — store angles into a preset (RAM)
+// GET /savepose?id=N&a00=..  � store angles into a preset (RAM)
 void hSavePose() {
   if (!server.hasArg("id")) {
     server.send(400, "application/json", "{\"error\":\"missing id\"}");
@@ -1013,11 +589,11 @@ void setup() {
                 bootResetReason == ESP_RST_BROWNOUT ? " (BROWNOUT)" : "");
 
   Serial.println("\n=============================================");
-  Serial.println("  FusionForce RUNNER4 v6.1 — ESP32-S3");
+  Serial.println("  FusionForce RUNNER4 v6.1 � ESP32-S3");
   Serial.println("  Robot + Colour + Line + LineFollow + ToF");
   Serial.println("=============================================");
 
-  // ── RGB LED init (GPIO 16=R, 17=G, 18=B, common-cathode) ─────────────────
+  // -- RGB LED init (GPIO 16=R, 17=G, 18=B, common-cathode) -----------------
   pinMode(RGB_RED_PIN, OUTPUT);
   digitalWrite(RGB_RED_PIN, LOW);
   pinMode(RGB_GREEN_PIN, OUTPUT);
@@ -1026,7 +602,7 @@ void setup() {
   digitalWrite(RGB_BLUE_PIN, LOW);
   Serial.println("[RGB] LED pins initialised (GPIO 16/17/18).");
 
-  // One shared I2C bus (GPIO 11/12 — GPIO 8/9 are line-array ADC inputs)
+  // One shared I2C bus (GPIO 11/12 � GPIO 8/9 are line-array ADC inputs)
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(I2C_HZ);
   Wire.setTimeOut(50);
@@ -1068,19 +644,71 @@ void setup() {
   server.on("/turnstatus", hTurnStatus);
   server.on("/sweep", hSweep);
 
-  // ── IMPORTANT: Init ToF FIRST so it can vacate I2C address 0x29 ─────────
-  // Both VL53L0X and TCS34725 use 0x29 by default. tofBegin() relocates the
-  // VL53L0X to 0x30 before colorBegin() claims 0x29 for the colour sensor.
+  // ToF stays on the main bus (GPIO 11/12). The color sensor uses a second
+  // hardware I2C controller on GPIO 41/42, so both may use address 0x29.
   tofBegin(server, AP_SSID);
 
   // Colour sensor module (separate root: /color, /color/...)
-  colorBegin(server, AP_SSID, I2C_SDA, I2C_SCL);
+  colorBegin(server, AP_SSID, COLOR_I2C_SDA, COLOR_I2C_SCL);
 
   // Line array module (separate root: /line, /line/...)
   lineBegin(server, AP_SSID);
 
   // Line-follow module (separate root: /linefollow, /lf/...)
   lineFollowBegin(server, AP_SSID);
+
+  // Competition FSM (separate root: /comp/...)
+  competitionBegin(server);
+
+  // Arm: 2 servos wired directly to GPIO 47 (Lift) and GPIO 21 (Grip) via LEDC
+  // PWM
+  armInit();
+
+  // /arm/* routes � test/calibrate arm servos directly from browser
+  server.on("/arm/pick", []() {
+    addCORS();
+    armPickBall();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"pick\"}");
+  });
+  server.on("/arm/place", []() {
+    addCORS();
+    armPlaceBall();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"place\"}");
+  });
+  server.on("/arm/up", []() {
+    addCORS();
+    armUp();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"up\"}");
+  });
+  server.on("/arm/down", []() {
+    addCORS();
+    armDown();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"down\"}");
+  });
+  server.on("/arm/open", []() {
+    addCORS();
+    armOpen();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"open\"}");
+  });
+  server.on("/arm/close", []() {
+    addCORS();
+    armClose();
+    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"close\"}");
+  });
+  server.on("/arm/set", []() {
+    addCORS();
+    if (server.hasArg("lift")) {
+      int deg = constrain(server.arg("lift").toInt(), 0, 180);
+      armSetLift(deg);
+      Serial.printf("[ARM] Manual: lift=%d\xC2\xB0\n", deg);
+    }
+    if (server.hasArg("grip")) {
+      int deg = constrain(server.arg("grip").toInt(), 0, 180);
+      armSetGrip(deg);
+      Serial.printf("[ARM] Manual: grip=%d\xC2\xB0\n", deg);
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+  });
 
   server.begin();
   serverStarted = true;
@@ -1090,6 +718,12 @@ void setup() {
   Serial.println("  Line:       http://192.168.4.1/line");
   Serial.println("  LineFollow: http://192.168.4.1/linefollow");
   Serial.println("  ToF:        http://192.168.4.1/tof");
+  Serial.println("  Competition: /comp/start /comp/stop /comp/status");
+  Serial.println("  Arm:         /arm/pick /arm/place /arm/up /arm/down "
+                 "/arm/open /arm/close");
+  Serial.println("  Arm tune:    /arm/set?lift=90&grip=45");
+  Serial.println(
+      "  Dashboard:  http://192.168.4.1/comp  ? START HERE FOR COMPETITION");
 }
 
 // =============================================================================
@@ -1100,4 +734,11 @@ void loop() {
   // (avoids duplicate handleClient / LED update calls).
   serviceBackground();
   runPendingJob();
+
+  // Check physical start button for competition (only when idle)
+  if (!robotBusy() && competitionCheckButton()) {
+    Serial.println("[COMP] Start button pressed!");
+    jobSteps = 1; // start from task 1
+    pendingJob = JOB_COMPETITION;
+  }
 }

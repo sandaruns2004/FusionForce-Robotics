@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>RUNNER4 · Pose Control [DEMO]</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;overflow-x:hidden}
+.hdr{background:linear-gradient(135deg,#161b22,#21262d);border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:99}
+.brand h1{font-size:1.2rem;font-weight:800;letter-spacing:3px;background:linear-gradient(135deg,#58a6ff,#a5d6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand p{font-size:.65rem;color:#8b949e;margin-top:2px;letter-spacing:.5px}
+.hdr-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sdot{width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.stxt{font-size:.72rem;color:#8b949e}
+.btn{padding:7px 14px;border:none;border-radius:8px;cursor:pointer;font-size:.78rem;font-weight:600;transition:all .18s;text-decoration:none;display:inline-block}
+.btn-all{background:linear-gradient(135deg,#1f6feb,#58a6ff);color:#fff}
+.btn-all:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(88,166,255,.35)}
+.btn-sw{background:rgba(255,255,255,.06);color:#c9d1d9;border:1px solid #30363d}
+.btn-sw:hover{background:rgba(255,255,255,.11)}
+.btn-col{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff}
+.btn-line{background:linear-gradient(135deg,#0891b2,#22d3ee);color:#fff}
+.btn-comp{background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff}
+.btn-comp:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(245,158,11,.4)}
+.layout{display:flex;align-items:flex-start}
+.sidebar{width:210px;flex-shrink:0;background:#161b22;border-right:1px solid #30363d;padding:12px 10px 20px;display:flex;flex-direction:column;gap:5px;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
+.sb-label{font-size:.58rem;font-weight:700;letter-spacing:1.8px;color:#484f58;text-transform:uppercase;padding:6px 5px 3px;margin-top:4px}
+.pose-btn{width:100%;padding:9px 11px;border:1px solid #30363d;border-radius:8px;background:rgba(255,255,255,.03);color:#c9d1d9;cursor:pointer;font-size:.76rem;font-weight:600;text-align:left;transition:all .2s;display:flex;align-items:center;gap:9px}
+.pose-btn:hover{border-color:#58a6ff55;color:#a5d6ff;transform:translateX(2px)}
+.pose-btn.active{background:rgba(88,166,255,.14);border-color:#58a6ff;color:#58a6ff;transform:translateX(2px)}
+.pose-icon{font-size:1rem;width:20px;text-align:center}
+.pose-name{flex:1}
+.pose-badge{font-size:.55rem;background:rgba(255,255,255,.08);padding:2px 5px;border-radius:4px;color:#6e7681;margin-left:auto}
+.pose-btn.active .pose-badge{background:rgba(88,166,255,.2);color:#58a6ff}
+.sb-div{border:none;border-top:1px solid #21262d;margin:8px 0}
+.play-btn{width:100%;padding:10px;border:none;border-radius:9px;cursor:pointer;font-size:.82rem;font-weight:700;transition:all .2s;letter-spacing:.5px}
+.play-btn.stopped{background:linear-gradient(135deg,#1a7f37,#3fb950);color:#fff}
+.play-btn.stopped:hover{box-shadow:0 4px 14px rgba(63,185,80,.4);transform:translateY(-1px)}
+.play-btn.playing{background:linear-gradient(135deg,#b91c1c,#f85149);color:#fff;animation:pulse-red 1.5s infinite}
+@keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(248,81,73,.4)}50%{box-shadow:0 0 0 6px rgba(248,81,73,.0)}}
+.speed-row{display:flex;align-items:center;gap:7px;font-size:.63rem;color:#6e7681}
+.speed-sl{flex:1;-webkit-appearance:none;height:3px;border-radius:3px;background:#21262d;outline:none;cursor:pointer}
+.speed-sl::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#58a6ff;cursor:pointer;border:2px solid #0d1117}
+.content{flex:1;padding:14px 16px;min-width:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:900px;margin:0 auto}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden;transition:box-shadow .2s}
+.card:hover{box-shadow:0 5px 22px rgba(0,0,0,.45)}
+.ch{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1px solid #21262d}
+.badge{font-size:.88rem;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:7px}
+.cn{font-size:.8rem;color:#8b949e;flex:1}
+.cb{padding:12px 14px}
+.jr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.jl{font-size:.66rem;color:#8b949e;width:86px;flex-shrink:0;font-weight:700;letter-spacing:.5px}
+.sl{flex:1;-webkit-appearance:none;height:4px;border-radius:4px;background:#21262d;outline:none;cursor:pointer}
+.sl::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;cursor:pointer;border:2px solid #0d1117;background:#58a6ff}
+.av{font-size:.78rem;font-weight:700;font-family:monospace;min-width:36px;text-align:right;color:#e6edf3}
+.demo-bar{background:#1a1040;border:1px solid #4338ca;padding:10px 16px;text-align:center;font-size:12px;color:#a5b4fc;font-weight:600}
+</style>
+</head>
+<body>
+<div class="demo-bar">🖥️ DEMO MODE — links are connected to other demo pages | Real robot: http://192.168.4.1/</div>
+<header class="hdr">
+  <div class="brand">
+    <h1>RUNNER4</h1>
+    <p>12-DOF Quadruped &nbsp;·&nbsp; Pose Presets + FK/IK &nbsp;·&nbsp; ESP32-S3 &nbsp;·&nbsp; v6.0</p>
+  </div>
+  <div class="hdr-r">
+    <div><span class="sdot"></span><span class="stxt">Connected (Demo)</span></div>
+    <a class="btn btn-line" href="line.html">&#128739; Line Array</a>
+    <a class="btn btn-line" href="linefollow.html" style="background:linear-gradient(135deg,#0f766e,#2dd4bf)">&#129302; Line Follow</a>
+    <a class="btn btn-col" href="color.html">&#127912; Colour Sensor</a>
+    <a class="btn btn-col" href="tof.html" style="background:linear-gradient(135deg,#0e7490,#06b6d4)">&#128225; ToF Sensors</a>
+    <a class="btn btn-comp" href="comp.html">&#127942; Competition</a>
+    <a class="btn btn-col" href="#" style="opacity:.5">System Health</a>
+    <button class="btn btn-sw">&#9654; Sweep</button>
+    <button class="btn btn-all">&#8962; All HOME</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-label">Poses</div>
+    <button class="pose-btn active" onclick="setActive(this)">
+      <span class="pose-icon">🏠</span><span class="pose-name">Home / Rest</span>
+      <span class="pose-badge">DEFAULT</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">🦵</span><span class="pose-name">Stand Tall</span>
+      <span class="pose-badge">POSE</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">🐾</span><span class="pose-name">Low Crouch</span>
+      <span class="pose-badge">POSE</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">🚶</span><span class="pose-name">Walk Ready</span>
+      <span class="pose-badge">GAIT</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">↩️</span><span class="pose-name">Turn Left</span>
+      <span class="pose-badge">MOTION</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">↪️</span><span class="pose-name">Turn Right</span>
+      <span class="pose-badge">MOTION</span>
+    </button>
+    <button class="pose-btn" onclick="setActive(this)">
+      <span class="pose-icon">⬆️</span><span class="pose-name">Step Forward</span>
+      <span class="pose-badge">MOTION</span>
+    </button>
+    <div class="sb-div"></div>
+    <div class="sb-label">Walk Control</div>
+    <div style="padding:0 4px;display:flex;flex-direction:column;gap:8px">
+      <button class="play-btn stopped" id="walkBtn" onclick="toggleWalk()">▶ Start Walk</button>
+      <div class="speed-row">
+        <span>Speed</span>
+        <input class="speed-sl" type="range" min="1" max="10" value="5">
+        <span>5</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content">
+    <div class="grid" id="legGrid"></div>
+  </div>
+</div>
+
+<script>
+const LEG_NAMES = ['FR','FL','RR','RL'];
+const LEG_COLORS = ['#58a6ff','#3fb950','#f85149','#d2a8ff'];
+const JOINTS = ['Hip Swing','Hip Lift','Knee'];
+const DEMO_VALS = [[90,45,135],[90,45,135],[90,45,135],[90,45,135]];
+
+function buildGrid(){
+  const g = document.getElementById('legGrid');
+  g.innerHTML = LEG_NAMES.map((leg,li)=>`
+    <div class="card">
+      <div class="ch">
+        <span class="badge" style="background:${LEG_COLORS[li]}22;color:${LEG_COLORS[li]}">${leg}</span>
+        <span class="cn">${li<2?'Front':'Rear'} ${li%2===0?'Right':'Left'} Leg</span>
+      </div>
+      <div class="cb">
+        ${JOINTS.map((j,ji)=>`
+        <div class="jr">
+          <span class="jl">${j}</span>
+          <input class="sl" type="range" min="0" max="180" value="${DEMO_VALS[li][ji]}"
+            style="--c:${LEG_COLORS[li]}"
+            oninput="this.nextElementSibling.textContent=this.value+'°'">
+          <span class="av">${DEMO_VALS[li][ji]}°</span>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function setActive(btn){
+  document.querySelectorAll('.pose-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function toggleWalk(){
+  const b=document.getElementById('walkBtn');
+  if(b.classList.contains('stopped')){
+    b.classList.remove('stopped');b.classList.add('playing');
+    b.textContent='■ Stop Walk';
+  } else {
+    b.classList.remove('playing');b.classList.add('stopped');
+    b.textContent='▶ Start Walk';
+  }
+}
+buildGrid();
+</script>
+</body>
+</html>
+

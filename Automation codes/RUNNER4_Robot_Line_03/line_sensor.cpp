@@ -5,8 +5,8 @@
 //           -> junction confirm -> lost / safe-stop state machine
 // All internals live in an anonymous namespace. Public API: line_sensor.h
 // =============================================================================
-#include "line_sensor.h"
-#include "line_page.h"
+#include "sensors/line_sensor.h"
+#include "dashboard/line_page.h"
 #include <WiFi.h>
 #include <Preferences.h>
 #include <math.h>
@@ -159,7 +159,7 @@ void cycle(uint32_t now) {
 
   // weighted centroid
   // Physical layout: S9 (i=8) is LEFTMOST, S1 (i=0) is RIGHTMOST.
-  // Raw centroid > 4.0 means line is under left sensors (S9 side) → robot is RIGHT of line → negative error.
+  // Raw centroid > 4.0 means line is under left sensors (S9 side) ? robot is RIGHT of line ? negative error.
   // Negate so: errMm < 0 = robot right of line, errMm > 0 = robot left of line.
   float sumW = 0, sumV = 0; activeCnt = 0; activeMask = 0;
   for (int i = 0; i < N; i++) {

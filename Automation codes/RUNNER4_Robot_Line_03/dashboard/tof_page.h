@@ -80,6 +80,7 @@ const char TOF_HTML[] PROGMEM = R"rawliteral(
     <a href="/color">🎨 Colour</a><span class="sep">|</span>
     <a href="/line">📊 Line</a><span class="sep">|</span>
     <a href="/linefollow">🏁 Line Follow</a><span class="sep">|</span>
+    <a href="/comp" style="color:#f59e0b;font-weight:700">🏆 Competition</a><span class="sep">|</span>
     <span class="pill" id="st">⏳ Connecting…</span>
   </nav>
 

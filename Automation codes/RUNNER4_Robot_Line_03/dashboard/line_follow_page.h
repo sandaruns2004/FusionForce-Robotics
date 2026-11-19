@@ -20,6 +20,7 @@ h1 small{font-size:12px;color:var(--mut);-webkit-text-fill-color:var(--mut)}
 .nav a.r{background:linear-gradient(135deg,#1f6feb,#58a6ff);color:#fff}
 .nav a.l{background:linear-gradient(135deg,#0891b2,#22d3ee);color:#fff}
 .nav a.c{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff}
+.nav a.g{background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff}
 .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;background:#334155;margin:0 4px 4px 0}
 .ok{background:#14532d;color:#bbf7d0}.bad{background:#7f1d1d;color:#fecaca}.warn{background:#713f12;color:#fde68a}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:12px}
@@ -98,6 +99,7 @@ label{font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer}
 <a class="r" href="/">← Robot</a>
 <a class="l" href="/line">📏 Line Array</a>
 <a class="c" href="/color">🎨 Colour</a>
+<a class="g" href="/comp">🏆 Competition</a>
 </div>
 </div>
 <span id="pk" class="pill">Array…</span><span id="lk" class="pill">WiFi…</span><span id="st" class="pill">Status</span>
