@@ -26,11 +26,11 @@
 
 // -- Gait Parameters (editable dynamically via web UI) ------------------------
 // Leg order: 0=FL, 1=FR, 2=BL, 3=BR
-int WALK_HIP_DELTA   = 30;   // hip swing, degrees (45 -> 15 = 30)
-int WALK_FEMUR_DELTA = 25;   // femur lift, degrees
+int WALK_HIP_DELTA   = 15;   // hip swing, degrees (reduced from 30 for smooth, tight stride)
+int WALK_FEMUR_DELTA = 20;   // femur lift, degrees
 const int WALK_FEMUR_TRIM[4] = {0, 0, 0, 0};
 
-int TURN_HIP_DELTA   = 20;   // hip swing, degrees
+int TURN_HIP_DELTA   = 15;   // hip swing, degrees
 int TURN_FEMUR_DELTA = 20;   // femur lift, degrees
 
 // Direction signs (FL, FR, BL, BR)

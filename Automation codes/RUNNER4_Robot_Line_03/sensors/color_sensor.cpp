@@ -1,13 +1,14 @@
+#pragma once
 // =============================================================================
 // color_sensor.cpp - TCS34725 colour module for RUNNER4
 // Pipeline: I2C RGBC -> settle/AVALID gate -> EMA -> normalise -> white-balance
 //           -> HSV -> ratio/HSV classifier -> majority vote -> confirmed
-// All internals are in an anonymous namespace so they cannot clash with the
-// robot code. Public API is in color_sensor.h
+// All internals are isolated in namespace ColorSensorInternal to prevent collisions.
+// Public API is in color_sensor.h
 // =============================================================================
-#include "config/robot_config.h"
-#include "sensors/color_sensor.h"
-#include "dashboard/color_page.h"
+#include "../config/robot_config.h"
+#include "color_sensor.h"
+#include "../dashboard/color_page.h"
 #include <Wire.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -15,7 +16,7 @@
 
 #define TCS_ADDR 0x29
 
-namespace {
+namespace ColorSensorInternal {
 
 // The color sensor is on the ESP32-S3's second I2C controller so its fixed
 // address 0x29 cannot collide with the VL53L0X on the main bus.
@@ -401,11 +402,11 @@ void handleExport() {   // paste into STM32 tcs34725.c
   srv->send(200, "text/plain", b);
 }
 
-
-}  // namespace
+}  // namespace ColorSensorInternal
 
 // ---------------- PUBLIC API ----------------
-bool colorBegin(WebServer &server, const char *ssid, int sda, int scl) {
+inline bool colorBegin(WebServer &server, const char *ssid, int sda, int scl) {
+  using namespace ColorSensorInternal;
   srv = &server; apSsid = ssid; sdaPin = sda; sclPin = scl;
   colorWire.begin(sdaPin, sclPin, 400000);
   colorWire.setTimeOut(50);
@@ -414,17 +415,33 @@ bool colorBegin(WebServer &server, const char *ssid, int sda, int scl) {
   sensorOK = sensorInit();
   Serial.printf("[COLOR] TCS34725 %s, config %s\n", sensorOK ? "detected" : "NOT found (will retry)",
                 cfgFromFlash ? "loaded from flash" : "defaults");
-  srv->on("/color",        []() { srv->send_P(200, "text/html", COLOR_PAGE); });
-  srv->on("/color/data",   handleData);
-  srv->on("/color/config", handleConfig);
-  srv->on("/color/set",    handleSet);
-  srv->on("/color/cmd",    handleCmd);
-  srv->on("/color/wifi",   handleWifi);
-  srv->on("/color/export", handleExport);
+  srv->on("/color",        []() { ColorSensorInternal::srv->send_P(200, "text/html", COLOR_PAGE); });
+  srv->on("/color/data",   ColorSensorInternal::handleData);
+  srv->on("/color/config", ColorSensorInternal::handleConfig);
+  srv->on("/color/set",    ColorSensorInternal::handleSet);
+  srv->on("/color/cmd",    ColorSensorInternal::handleCmd);
+  srv->on("/color/wifi",   ColorSensorInternal::handleWifi);
+  srv->on("/color/export", ColorSensorInternal::handleExport);
   return sensorOK;
 }
-void colorPoll() { if (srv) pollSensor(); }
-bool colorSensorOnline() { return sensorOK; }
-uint8_t colorConfirmed() { return (uint8_t)confirmed; }
-uint8_t colorStoredBall() { return (uint8_t)(cfg.ball < 0 ? 0 : cfg.ball); }
-const char *colorName(uint8_t id) { return CN[id > 3 ? 0 : id]; }
+
+inline void colorPoll() {
+  using namespace ColorSensorInternal;
+  if (srv) pollSensor();
+}
+
+inline bool colorSensorOnline() {
+  return ColorSensorInternal::sensorOK;
+}
+
+inline uint8_t colorConfirmed() {
+  return (uint8_t)ColorSensorInternal::confirmed;
+}
+
+inline uint8_t colorStoredBall() {
+  return (uint8_t)(ColorSensorInternal::cfg.ball < 0 ? 0 : ColorSensorInternal::cfg.ball);
+}
+
+inline const char *colorName(uint8_t id) {
+  return ColorSensorInternal::CN[id > 3 ? 0 : id];
+}

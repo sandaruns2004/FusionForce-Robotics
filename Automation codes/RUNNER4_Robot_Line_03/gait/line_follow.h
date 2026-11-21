@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 // =============================================================================
 // line_follow.h — Proportional Line-Following Gait for RUNNER4
 //
@@ -119,7 +119,7 @@ static float savedAlpha = 0.7f; // to restore sensor alpha after run
 static void setDefaults() {
   memset(&cfg, 0, sizeof(cfg));
   cfg.magic = LF_CFG_MAGIC;
-  cfg.baseHipDelta = 20;
+  cfg.baseHipDelta = 15;
   cfg.femurDelta = 20;
   cfg.speedMs = 200; // ms per phase — 6 phases = 1.2s per cycle
   cfg.kp = 0.30f;

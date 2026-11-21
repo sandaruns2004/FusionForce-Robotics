@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 // =============================================================================
 // grid_search.h — SubTask #1: Grid Search, Ball Detection, Pick-up & Exit
 //
@@ -65,10 +65,16 @@ namespace gridns {
 // Current heading tracker
 static int sHeading = HEADING_NORTH;
 
-// Turn to a target heading, updating the tracked heading
+// Turn to a target heading, updating the tracked heading.
+// navTurnLeft90/Right90/180 now automatically:
+//   1. Turn on gyro → take turn → turn off gyro
+//   2. Run navCenterOnLine() to reach lineError ≈ 0
+// So we NO LONGER call navAlignToLine() here — it is handled inside the turn.
 static void turnTo(int target) {
     sHeading = navTurnToHeading(sHeading, target);
-    navAlignToLine();
+    // Brief settle wait after centering before line-follow resumes
+    waitMs(150);
+    serviceBackground();
 }
 
 // Walk forward along the line until the next junction or max cycles.
@@ -132,46 +138,69 @@ static uint8_t readColorAndPick() {
     return color;
 }
 
-// Navigate from current position to the grid exit (top-left area).
-// This is a simplified best-effort exit strategy.  The robot walks to the
-// west boundary, then north to the exit line, then follows the exit line out.
+// Navigate from current position to the grid exit (top-left corner = END).
 //
-// Assumptions:
-//   - Exit is at the top-left of the grid
-//   - The exit line continues the grid boundary northward/westward
-//   - Robot can reach exit by going west then north (or vice versa)
+// CUPHOLDER CONSTRAINT:
+//   The ball sits on a cupholder/pedestal at the cross.
+//   After picking, the robot has already done a 180° turn (see PHASE 7/8),
+//   so it is now facing BACK along the row it was scanning.
+//   sHeading has been updated to reflect this reversed heading.
+//
+// EXIT STRATEGY (always works regardless of which row ball was in):
+//   1. Walk back along the row toward the row's start boundary (junction)
+//   2. Face NORTH  → walk to top horizontal boundary (junction or line-lost)
+//   3. Face WEST   → walk to left vertical boundary (line-lost = exit col 0)
+//   4. Face NORTH  → walk a few steps past the grid to signal Task 1 done
+//
 static void navigateToExit() {
-    Serial.println("[GRID] Navigating to exit (top-left)...");
+    Serial.println("[GRID] ── navigateToExit ──");
 
-    // Step 1: Face WEST and walk to the left boundary
-    turnTo(HEADING_WEST);
+    // ── Leg A: Walk back to the row boundary ─────────────────────────────
+    // After the 180° turn we face back along the row (EAST if we were scanning
+    // WEST, or WEST if we were scanning EAST). Walk until we hit the row-end
+    // junction or run out of line.
+    Serial.println("[GRID] ExitA: walking back to row boundary...");
     NavResult r = navLineFollowUntil(GRID_EXIT_MAX_CYCLES,
-                                      STOP_ON_LINE_LOST | STOP_ON_ABORT | STOP_ON_COUNT);
-    Serial.printf("[GRID] Westward walk: reason=0x%02X cycles=%d\n",
+                                     STOP_ON_JUNCTION | STOP_ON_LINE_LOST |
+                                     STOP_ON_ABORT | STOP_ON_COUNT);
+    Serial.printf("[GRID] ExitA done: reason=0x%02X cycles=%d\n",
                   r.reason, r.cyclesDone);
-
     if (compStop) return;
 
-    // Step 2: Face NORTH and walk to the top boundary / exit
+    // ── Leg B: Turn NORTH → walk to top boundary ─────────────────────────
+    Serial.println("[GRID] ExitB: turning NORTH, walking to top boundary...");
     turnTo(HEADING_NORTH);
     r = navLineFollowUntil(GRID_EXIT_MAX_CYCLES,
-                            STOP_ON_LINE_LOST | STOP_ON_ABORT | STOP_ON_COUNT);
-    Serial.printf("[GRID] Northward walk: reason=0x%02X cycles=%d\n",
+                           STOP_ON_JUNCTION | STOP_ON_LINE_LOST |
+                           STOP_ON_ABORT | STOP_ON_COUNT);
+    Serial.printf("[GRID] ExitB done: reason=0x%02X cycles=%d\n",
                   r.reason, r.cyclesDone);
-
     if (compStop) return;
 
-    // Step 3: Follow any remaining exit line (may need to turn west)
-    // The exact exit geometry depends on the arena — adjust if needed
-    if (r.stoppedOnLost()) {
-        // Line ended — might need to turn and find the exit continuation
-        turnTo(HEADING_WEST);
-        navAlignToLine(5);
-        navLineFollowUntil(GRID_EXIT_MAX_CYCLES,
-                            STOP_ON_LINE_LOST | STOP_ON_ABORT | STOP_ON_COUNT);
-    }
+    // ── Leg C: Turn WEST → walk to left boundary (col 0) ─────────────────
+    Serial.println("[GRID] ExitC: turning WEST, walking to left boundary...");
+    turnTo(HEADING_WEST);
+    r = navLineFollowUntil(GRID_EXIT_MAX_CYCLES,
+                           STOP_ON_LINE_LOST | STOP_ON_JUNCTION |
+                           STOP_ON_ABORT | STOP_ON_COUNT);
+    Serial.printf("[GRID] ExitC done: reason=0x%02X cycles=%d\n",
+                  r.reason, r.cyclesDone);
+    if (compStop) return;
 
-    Serial.println("[GRID] Exit navigation complete");
+    // ── Leg D: Turn NORTH → walk to top-left corner (END) ────────────────
+    Serial.println("[GRID] ExitD: turning NORTH, walking to END corner...");
+    turnTo(HEADING_NORTH);
+    r = navLineFollowUntil(GRID_EXIT_MAX_CYCLES,
+                           STOP_ON_LINE_LOST | STOP_ON_JUNCTION |
+                           STOP_ON_ABORT | STOP_ON_COUNT);
+    Serial.printf("[GRID] ExitD done: reason=0x%02X cycles=%d\n",
+                  r.reason, r.cyclesDone);
+    if (compStop) return;
+
+    // ── Final: Step ~15 cm north past grid boundary ───────────────────────
+    Serial.println("[GRID] Reached END corner! Stepping North to clear boundary...");
+    navWalkSteps(3, NAV_WALK_SPEED_MS);
+    Serial.println("[GRID] Grid cleared! SubTask 1 officially finished.");
 }
 
 } // namespace gridns
@@ -328,8 +357,32 @@ found:
     if (compStop) goto done;
 
     // =====================================================================
-    // PHASE 8: Exit the grid
+    // PHASE 8: Clear the cupholder — 180° turn then exit
     // =====================================================================
+    // The ball sits on a cupholder/pedestal at the cross.
+    // We CANNOT continue forward past this point (cupholder blocks the path).
+    // Strategy:
+    //   1. 180° turn (face back along the row we came from)
+    //   2. Update heading tracker so navigateToExit() knows our direction
+    //   3. Walk 2 steps forward (clears the cross, gets back on a clean line segment)
+    //   4. navigateToExit() — walk back to boundary → north → west → north → done
+    Serial.println("[GRID] Phase 8: 180° turn to clear cupholder...");
+
+    navTurn180();
+
+    // Flip the heading tracker: row scan was WEST → now EAST, or EAST → now WEST
+    gridns::sHeading = (gridns::sHeading + 2) % 4;
+    Serial.printf("[GRID] Heading after 180°: %d\n", gridns::sHeading);
+
+    // Brief wait for settle + gyro off (navTurn180 already called mpuSetStationary(true))
+    waitMs(200);
+    serviceBackground();
+
+    // Walk a couple steps back to clear the cross so we're on a plain line segment
+    Serial.println("[GRID] Walking back 2 steps to clear cross...");
+    navWalkSteps(2, NAV_WALK_SPEED_MS);
+    if (compStop) goto done;
+
     Serial.println("[GRID] Phase 8: Exiting grid...");
     gridns::navigateToExit();
 

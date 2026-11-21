@@ -17,10 +17,10 @@
 //   Diagonal separation (FL then BR, FR then BL) balances ground reaction forces.
 //
 // ANGLES REFERENCE (Pose 1 - STANDING):
-//   FL (Leg 0): Hip=45,  Femur=25,  Tibia=115
-//   FR (Leg 1): Hip=94,  Femur=135, Tibia=45
-//   BL (Leg 2): Hip=94,  Femur=111, Tibia=55
-//   BR (Leg 3): Hip=45,  Femur=37,  Tibia=115
+//   FL (Leg 0): Hip=45,  Femur=15,  Tibia=100
+//   FR (Leg 1): Hip=94,  Femur=140, Tibia=70
+//   BL (Leg 2): Hip=74,  Femur=133, Tibia=60
+//   BR (Leg 3): Hip=34,  Femur=35,  Tibia=120
 //
 // MOTOR DIRECTIONS:
 //   Lifting: FL & BR femurs increase (+20); FR & BL femurs decrease (-20).
@@ -52,14 +52,14 @@ extern int jobSteps;
 
 // ── TUNING CONSTANTS ─────────────────────────────────────────────────────────
 // Adjust these to calibrate step length and ground clearance
-static const int CRAWL_SWING = 20;  // Deg of hip swing per step (stride length)
+static const int CRAWL_SWING = 15;  // Deg of hip swing per step (stride length, reduced for stability)
 static const int CRAWL_LIFT  = 20;  // Deg of femur lift per step (ground clearance)
 
 // Standing neutral angles
-static const int CRAWL_FL_H = 45,  CRAWL_FL_F = 25,  CRAWL_FL_T = 115;
-static const int CRAWL_FR_H = 94,  CRAWL_FR_F = 135, CRAWL_FR_T = 45;
-static const int CRAWL_BL_H = 94,  CRAWL_BL_F = 111, CRAWL_BL_T = 55;
-static const int CRAWL_BR_H = 45,  CRAWL_BR_F = 37,  CRAWL_BR_T = 115;
+static const int CRAWL_FL_H = 45,  CRAWL_FL_F = 15,  CRAWL_FL_T = 100;
+static const int CRAWL_FR_H = 94,  CRAWL_FR_F = 140, CRAWL_FR_T = 70;
+static const int CRAWL_BL_H = 74,  CRAWL_BL_F = 133, CRAWL_BL_T = 60;
+static const int CRAWL_BR_H = 34,  CRAWL_BR_F = 35,  CRAWL_BR_T = 120;
 
 // Swung forward hip targets (stride forward in air)
 static const int CRAWL_FL_H_SW = CRAWL_FL_H - CRAWL_SWING; // 25

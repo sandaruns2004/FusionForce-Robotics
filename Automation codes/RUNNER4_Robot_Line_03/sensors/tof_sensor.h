@@ -1,20 +1,29 @@
-#pragma once
+ï»¿#pragma once
 // =============================================================================
-// tof_sensor.h  -  Single VL53L0X Time-of-Flight sensor  (NON-BLOCKING)
-//   One VL53L0X on the main I2C bus; color sensor uses a separate bus.
+// tof_sensor.h  -  3x VL53L0X Time-of-Flight sensors  (NON-BLOCKING)
 //
-//   I2C bus: SDA=GPIO11, SCL=GPIO12 (shared with PCA9685 only).
+//   Three VL53L0X sensors share the main I2C bus (SDA=GPIO11, SCL=GPIO12).
+//   Each sensor has its own XSHUT pin so we can enumerate them one at a time
+//   and assign unique I2C addresses at boot.
+//
+//   XSHUT pins (active-LOW):
+//     Front  -> GPIO 13   runtime address -> 0x30
+//     Right  -> GPIO 14   runtime address -> 0x31
+//     Left   -> GPIO 21   runtime address -> 0x32
+//
 //   Wire.begin(11, 12, 400000) must be called in setup() BEFORE tofBegin().
 //
-//   IMPORTANT — non-blocking design:
-//     Sensor runs in CONTINUOUS mode.  tofPoll() calls
-//     readRangeContinuousMillimeters() which returns the last completed
-//     result instantly — it never blocks.  The rolling median is built
-//     across multiple poll() calls rather than inside one blocking loop.
+//   NON-BLOCKING design:
+//     All sensors run in CONTINUOUS mode.  tofPoll() reads the latest
+//     completed measurement from each sensor instantly (no waiting).
+//     A per-sensor rolling-median filter smooths the output.
 //
 //   Web routes registered by tofBegin():
-//     GET /tof       - live dashboard page
-//     GET /tof/data  - JSON {"front":mm, "front_raw":mm, "ok":bool}
+//     GET /tof          - live 3-sensor dashboard page
+//     GET /tof/data     - JSON {front, right, left, front_raw, right_raw,
+//                               left_raw, front_ok, right_ok, left_ok,
+//                               front_addr, right_addr, left_addr}
+//     GET /tof/diag     - JSON {i2c_scan[], sensors[]} for debugging
 //
 //   Call tofPoll() from loop() / serviceBackground() - non-blocking.
 // =============================================================================
@@ -23,160 +32,234 @@
 #include <Wire.h>
 #include <VL53L0X.h>   // pololu/VL53L0X library
 
-// ---- Filter / timing settings -----------------------------------------------
-#define TOF_MAX_VALID_MM      1200
-// Timing budget only affects sensor accuracy; in continuous mode the MCU
-// never waits for it — the sensor measures autonomously.
-#define TOF_TIMING_BUDGET     33000   // us  (33 ms ~= 30 Hz, fast mode)
-#define TOF_MEDIAN_WIN        5       // rolling median window size (odd)
-#define TOF_POLL_INTERVAL_MS  40      // min ms between poll() reads (guard)
-
-// VL53L0X is moved from boot address 0x29 to this runtime address.
-// MUST match what is used in tofBegin() setAddress() call.
-#define TOF_I2C_ADDR          0x30
+// ---- XSHUT pin assignments ---------------------------------------------------
 #ifndef TOF_FRONT_XSHUT_PIN
-#define TOF_FRONT_XSHUT_PIN   13      // Front VL53L0X XSHUT hardware reset pin
+#define TOF_FRONT_XSHUT_PIN   13
+#endif
+#ifndef TOF_RIGHT_XSHUT_PIN
+#define TOF_RIGHT_XSHUT_PIN   14
+#endif
+#ifndef TOF_LEFT_XSHUT_PIN
+#define TOF_LEFT_XSHUT_PIN    21
 #endif
 
+// ---- Runtime I2C addresses (assigned during tofBegin enumeration) -----------
+#define TOF_FRONT_ADDR  0x30
+#define TOF_RIGHT_ADDR  0x31
+#define TOF_LEFT_ADDR   0x32
+
+// ---- Filter / timing settings -----------------------------------------------
+#define TOF_MAX_VALID_MM      1200
+#define TOF_TIMING_BUDGET     33000   // us (33 ms ~= 30 Hz, fast mode)
+#define TOF_MEDIAN_WIN        5       // rolling median window (odd)
+#define TOF_POLL_INTERVAL_MS  40      // min ms between reads per sensor
 
 // =============================================================================
 // Public API
 // =============================================================================
 void  tofBegin(WebServer &server, const char *apSsid);
-void  tofPoll();       // non-blocking; call from loop() and serviceBackground()
-float tofFront();      // calibrated distance in mm
-float tofFrontRaw();   // raw sensor reading in mm (latest single reading)
-bool  tofOnline();
+void  tofPoll();          // non-blocking; call from loop()
+
+// Distance getters (calibrated median, mm)
+float tofFront();
+float tofRight();
+float tofLeft();
+
+// Raw last-reading getters
+float tofFrontRaw();
+float tofRightRaw();
+float tofLeftRaw();
+
+// Online flags
+bool  tofFrontOnline();
+bool  tofRightOnline();
+bool  tofLeftOnline();
+
+// Legacy single-sensor compat
+bool  tofOnline();   // true if at least front is online
 
 // =============================================================================
-// IMPLEMENTATION (define TOF_IMPLEMENTATION in exactly one .ino TU)
+// IMPLEMENTATION (define TOF_IMPLEMENTATION in exactly one translation unit)
 // =============================================================================
 #ifdef TOF_IMPLEMENTATION
 
 #include "../dashboard/tof_page.h"   // TOF_HTML PROGMEM string
 
-static VL53L0X _tofSensor;
-static bool    _tofOk = false;
+// ---- Calibration table (piecewise-linear, common to all sensors) -----------
+static const uint8_t  _TOF_N_CAL  = 18;
+static const float _TOF_CAL_RAW[18]  = {52,63,74,85,94,103,115,123,129,137,145,152,159,169,175,181,186,191};
+static const float _TOF_CAL_TRUE[18] = {30,40,50,60,70, 80, 90,100,110,120,130,140,150,160,170,180,190,200};
 
-static float _front_mm  = 0;
-static float _front_raw = 0;
-
-// ---- Calibration table (piecewise-linear) -----------------------------------
-// From vl53l0x_calibrated2_esp32_3cm_to_20cm.ino (front sensor, 30-200 mm)
-static const uint8_t N_CAL = 18;
-static const float CAL_RAW[18]  = {52,63,74,85,94,103,115,123,129,137,145,152,159,169,175,181,186,191};
-static const float CAL_TRUE[18] = {30,40,50,60,70, 80, 90,100,110,120,130,140,150,160,170,180,190,200};
-
-static float _piecewise(float raw) {
-    uint8_t i;
-    if      (raw <= CAL_RAW[0])        i = 0;
-    else if (raw >= CAL_RAW[N_CAL-1])  i = N_CAL - 2;
-    else { for (i = 0; i < N_CAL-2; i++) if (raw < CAL_RAW[i+1]) break; }
-    float slope = (CAL_TRUE[i+1] - CAL_TRUE[i]) / (CAL_RAW[i+1] - CAL_RAW[i]);
-    float v = CAL_TRUE[i] + slope * (raw - CAL_RAW[i]);
+static float _tofPiecewise(float raw) {
+    uint8_t i = 0;
+    if      (raw <= _TOF_CAL_RAW[0])            i = 0;
+    else if (raw >= _TOF_CAL_RAW[_TOF_N_CAL-1]) i = _TOF_N_CAL - 2;
+    else { for (i = 0; i < _TOF_N_CAL-2; i++) if (raw < _TOF_CAL_RAW[i+1]) break; }
+    float slope = (_TOF_CAL_TRUE[i+1] - _TOF_CAL_TRUE[i]) / (_TOF_CAL_RAW[i+1] - _TOF_CAL_RAW[i]);
+    float v = _TOF_CAL_TRUE[i] + slope * (raw - _TOF_CAL_RAW[i]);
     return v < 0 ? 0 : v;
 }
 
-// ---- Rolling median filter (non-blocking — accumulates across poll calls) ---
-static uint16_t _medBuf[TOF_MEDIAN_WIN];
-static uint8_t  _medIdx  = 0;
-static uint8_t  _medFill = 0;  // how many slots have been filled
+// ---- Per-sensor state -------------------------------------------------------
+struct TofSensor {
+    VL53L0X   dev;
+    bool      ok        = false;
+    uint8_t   xshutPin  = 0;
+    uint8_t   addr      = 0;
+    const char *name    = "";
+    float     dist      = 0;   // calibrated median mm
+    float     raw       = 0;   // latest raw mm
+    uint32_t  lastMs    = 0;
+    uint16_t  medBuf[TOF_MEDIAN_WIN] = {};
+    uint8_t   medIdx    = 0;
+    uint8_t   medFill   = 0;
 
-static void _medPush(uint16_t v) {
-    _medBuf[_medIdx] = v;
-    _medIdx = (_medIdx + 1) % TOF_MEDIAN_WIN;
-    if (_medFill < TOF_MEDIAN_WIN) _medFill++;
-}
-
-static uint16_t _medianResult() {
-    uint8_t n = (_medFill < TOF_MEDIAN_WIN) ? _medFill : TOF_MEDIAN_WIN;
-    if (n == 0) return 0;
-    uint16_t tmp[TOF_MEDIAN_WIN];
-    for (uint8_t i = 0; i < n; i++) tmp[i] = _medBuf[i];
-    // insertion sort
-    for (uint8_t i = 1; i < n; i++) {
-        uint16_t key = tmp[i]; int8_t j = (int8_t)i - 1;
-        while (j >= 0 && tmp[j] > key) { tmp[j+1] = tmp[j]; j--; }
-        tmp[j+1] = key;
+    void medPush(uint16_t v) {
+        medBuf[medIdx] = v;
+        medIdx = (medIdx + 1) % TOF_MEDIAN_WIN;
+        if (medFill < TOF_MEDIAN_WIN) medFill++;
     }
-    return tmp[n / 2];
+    uint16_t medResult() const {
+        uint8_t n = (medFill < TOF_MEDIAN_WIN) ? medFill : TOF_MEDIAN_WIN;
+        if (n == 0) return 0;
+        uint16_t tmp[TOF_MEDIAN_WIN];
+        for (uint8_t i = 0; i < n; i++) tmp[i] = medBuf[i];
+        for (uint8_t i = 1; i < n; i++) {
+            uint16_t key = tmp[i]; int8_t j = (int8_t)i - 1;
+            while (j >= 0 && tmp[j] > key) { tmp[j+1] = tmp[j]; j--; }
+            tmp[j+1] = key;
+        }
+        return tmp[n / 2];
+    }
+};
+
+static TofSensor _tof[3];   // 0=Front  1=Right  2=Left
+
+// ---- Sensor init helper -----------------------------------------------------
+static void _tofInitAll() {
+    // Pull all sensors into reset via XSHUT (LOW = reset)
+    for (int i = 0; i < 3; i++) {
+        pinMode(_tof[i].xshutPin, OUTPUT);
+        digitalWrite(_tof[i].xshutPin, LOW);
+    }
+    delay(10);
+
+    // Bring sensors up one at a time and assign unique addresses
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(_tof[i].xshutPin, HIGH);   // release this sensor from reset
+        delay(10);                               // wait for boot (datasheet: 1.2 ms min)
+
+        _tof[i].dev.setTimeout(300);
+        if (_tof[i].dev.init()) {
+            _tof[i].dev.setAddress(_tof[i].addr);
+            _tof[i].dev.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
+            _tof[i].dev.startContinuous();
+            _tof[i].ok = true;
+            Serial.printf("[TOF] %-6s VL53L0X found at 0x29, relocated -> 0x%02X\n",
+                          _tof[i].name, _tof[i].addr);
+        } else {
+            _tof[i].ok = false;
+            Serial.printf("[TOF] %-6s VL53L0X NOT FOUND (xshut=GPIO%u, target=0x%02X)\n",
+                          _tof[i].name, _tof[i].xshutPin, _tof[i].addr);
+        }
+    }
 }
 
-// ---- Polling state ----------------------------------------------------------
-static uint32_t _tofLastMs = 0;
+// ---- Public getters ---------------------------------------------------------
+float tofFront()       { return _tof[0].dist; }
+float tofRight()       { return _tof[1].dist; }
+float tofLeft()        { return _tof[2].dist; }
+float tofFrontRaw()    { return _tof[0].raw;  }
+float tofRightRaw()    { return _tof[1].raw;  }
+float tofLeftRaw()     { return _tof[2].raw;  }
+bool  tofFrontOnline() { return _tof[0].ok;   }
+bool  tofRightOnline() { return _tof[1].ok;   }
+bool  tofLeftOnline()  { return _tof[2].ok;   }
+bool  tofOnline()      { return _tof[0].ok;   }   // legacy compat
 
-// ---- Public functions -------------------------------------------------------
-float tofFront()    { return _front_mm;  }
-float tofFrontRaw() { return _front_raw; }
-bool  tofOnline()   { return _tofOk;     }
-
+// ---- tofBegin ---------------------------------------------------------------
 void tofBegin(WebServer &server, const char *apSsid) {
-    // Wire bus (GPIO 11 SDA, GPIO 12 SCL) already started in setup() - do NOT
-    // call Wire.begin() here again.
-    //
-    // Color sensor is on a physically separate I2C controller, so the VL53L0X
-    // can initialize at 0x29 without bus contention.
-    _tofSensor.setTimeout(500);
-    if (_tofSensor.init()) {
-        // Move VL53L0X to its runtime address on the main bus.
-        _tofSensor.setAddress(TOF_I2C_ADDR);
-        // Fast timing budget — sensor measures autonomously in continuous mode.
-        _tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
-        // Continuous mode: sensor produces readings on its own.
-        // tofPoll() just reads the latest completed result — no blocking.
-        _tofSensor.startContinuous();
-        _tofOk = true;
-        Serial.printf("[TOF] VL53L0X detected at 0x29, relocated to 0x%02X - continuous mode ON\n", TOF_I2C_ADDR);
-    } else {
-        _tofOk = false;
-        Serial.println("[TOF] VL53L0X NOT FOUND at 0x29");
-        Serial.println("[TOF] Check: SDA=GPIO11, SCL=GPIO12, VIN=3.3V, 4.7k pullups");
-    }
+    // Populate sensor descriptors (must be before _tofInitAll)
+    _tof[0].xshutPin = TOF_FRONT_XSHUT_PIN; _tof[0].addr = TOF_FRONT_ADDR; _tof[0].name = "Front";
+    _tof[1].xshutPin = TOF_RIGHT_XSHUT_PIN; _tof[1].addr = TOF_RIGHT_ADDR; _tof[1].name = "Right";
+    _tof[2].xshutPin = TOF_LEFT_XSHUT_PIN;  _tof[2].addr = TOF_LEFT_ADDR;  _tof[2].name = "Left";
 
+    _tofInitAll();
 
+    // --- /tof  dashboard page ---
     server.on("/tof", [&server]() {
         server.send_P(200, "text/html", TOF_HTML);
     });
 
+    // --- /tof/data  JSON live data ---
     server.on("/tof/data", [&server]() {
         server.sendHeader("Cache-Control", "no-store");
         server.sendHeader("Access-Control-Allow-Origin", "*");
-        String j = "{";
-        j += "\"ok\":"        + String(_tofOk ? "true" : "false") + ",";
-        j += "\"front\":"     + String(_front_mm,  1) + ",";
-        j += "\"front_raw\":" + String(_front_raw, 1);
-        j += "}";
+        char b[400];
+        snprintf(b, sizeof(b),
+            "{\"front_ok\":%s,\"right_ok\":%s,\"left_ok\":%s,"
+            "\"front\":%.1f,\"right\":%.1f,\"left\":%.1f,"
+            "\"front_raw\":%.1f,\"right_raw\":%.1f,\"left_raw\":%.1f,"
+            "\"front_addr\":\"0x%02X\",\"right_addr\":\"0x%02X\",\"left_addr\":\"0x%02X\"}",
+            _tof[0].ok?"true":"false", _tof[1].ok?"true":"false", _tof[2].ok?"true":"false",
+            _tof[0].dist, _tof[1].dist, _tof[2].dist,
+            _tof[0].raw,  _tof[1].raw,  _tof[2].raw,
+            (unsigned)_tof[0].addr, (unsigned)_tof[1].addr, (unsigned)_tof[2].addr);
+        server.send(200, "application/json", b);
+    });
+
+    // --- /tof/diag  I2C bus scan + per-sensor detail for debugging ---
+    server.on("/tof/diag", [&server]() {
+        server.sendHeader("Cache-Control", "no-store");
+        // Live I2C bus scan
+        String j = "{\"i2c_scan\":[";
+        bool first = true;
+        for (uint8_t addr = 1; addr < 127; addr++) {
+            Wire.beginTransmission(addr);
+            if (Wire.endTransmission() == 0) {
+                if (!first) j += ",";
+                char hex[8]; snprintf(hex, sizeof(hex), "\"0x%02X\"", (unsigned)addr);
+                j += hex;
+                first = false;
+            }
+        }
+        j += "],\"sensors\":[";
+        const char* snames[] = {"front","right","left"};
+        for (int i = 0; i < 3; i++) {
+            if (i) j += ",";
+            char entry[256];
+            snprintf(entry, sizeof(entry),
+                "{\"name\":\"%s\",\"ok\":%s,\"xshut_gpio\":%u,\"target_addr\":\"0x%02X\","
+                "\"dist\":%.1f,\"raw\":%.1f}",
+                snames[i], _tof[i].ok?"true":"false",
+                (unsigned)_tof[i].xshutPin, (unsigned)_tof[i].addr,
+                _tof[i].dist, _tof[i].raw);
+            j += entry;
+        }
+        j += "]}";
         server.send(200, "application/json", j);
     });
 
-    Serial.printf("[TOF] %s -> /tof  /tof/data\n", _tofOk ? "READY" : "OFFLINE");
+    int found = 0;
+    for (int i = 0; i < 3; i++) if (_tof[i].ok) found++;
+    Serial.printf("[TOF] Init complete: %d/3 sensors online -> /tof  /tof/data  /tof/diag\n", found);
 }
 
-// ---------------------------------------------------------------------------
-// tofPoll() — truly non-blocking.
-//
-// VL53L0X is in continuous mode, so the sensor keeps measuring on its own.
-// readRangeContinuousMillimeters() returns the LAST completed result instantly
-// (no wait).  We guard with TOF_POLL_INTERVAL_MS so we don't spam I2C.
-// Each call adds one sample to the rolling median ring buffer.
-// ---------------------------------------------------------------------------
+// ---- tofPoll ---------------------------------------------------------------
 void tofPoll() {
-    if (!_tofOk) return;
     uint32_t now = millis();
-    if (now - _tofLastMs < TOF_POLL_INTERVAL_MS) return;
-    _tofLastMs = now;
+    for (int i = 0; i < 3; i++) {
+        if (!_tof[i].ok) continue;
+        if (now - _tof[i].lastMs < TOF_POLL_INTERVAL_MS) continue;
+        _tof[i].lastMs = now;
 
-    // readRangeContinuousMillimeters() does NOT block in continuous mode.
-    uint16_t raw = _tofSensor.readRangeContinuousMillimeters();
+        uint16_t r = _tof[i].dev.readRangeContinuousMillimeters();
+        if (_tof[i].dev.timeoutOccurred() || r >= TOF_MAX_VALID_MM) continue;
 
-    if (_tofSensor.timeoutOccurred() || raw >= TOF_MAX_VALID_MM) {
-        // Bad reading — keep previous filtered output, don't update buffer
-        return;
+        _tof[i].medPush(r);
+        _tof[i].raw  = (float)r;
+        _tof[i].dist = _tofPiecewise((float)_tof[i].medResult());
     }
-
-    _medPush(raw);
-    _front_raw = (float)raw;                              // latest raw reading
-    _front_mm  = _piecewise((float)_medianResult());      // calibrated median
 }
 
 #endif // TOF_IMPLEMENTATION

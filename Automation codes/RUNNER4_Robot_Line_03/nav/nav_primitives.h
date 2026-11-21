@@ -47,6 +47,14 @@ extern const int FEMUR_LIFT_SIGN[4];
 extern const int WALK_FEMUR_TRIM[4];
 
 // ── Forward declarations from sensor modules ─────────────────────────────────
+// MPU6050 gyroscope (sensors/mpu6050.h)
+extern float mpuGetYaw();
+extern float mpuGetGz();
+extern bool  mpuIsReady();
+extern void  mpuResetYaw();
+extern void  mpuSetStationary(bool);
+extern bool  mpuTurnToAngle(float deg, bool rightTurn);
+
 extern bool    lineCalibrated();
 extern bool    lineFound();
 extern float   lineErrorMm();
@@ -58,7 +66,12 @@ extern void    lineSetAlpha(float a);
 extern uint8_t lineActiveCount();
 
 extern float   tofFront();
+extern float   tofRight();
+extern float   tofLeft();
 extern bool    tofOnline();
+extern bool    tofFrontOnline();
+extern bool    tofRightOnline();
+extern bool    tofLeftOnline();
 
 extern uint8_t colorConfirmed();
 extern uint8_t colorStoredBall();
@@ -88,13 +101,14 @@ extern volatile bool compStop;
 #define NAV_TURN_STEPS_90     4       // turnGait steps for a 90° turn
 #define NAV_TURN_STEPS_180    8       // turnGait steps for a 180° turn
 #define NAV_TURN_SPEED_MS     400     // ms per phase during turns
+#define NAV_TURN_TOL_DEG      3.0f    // gyro turn tolerance in degrees
 
 // Line-follow PD gains (simplified for nav use; same defaults as line_follow.h)
 #define NAV_KP                0.30f   // proportional gain (deg/mm)
 #define NAV_KD                0.10f   // derivative gain
 #define NAV_MAX_CORRECTION    15      // max steering correction in degrees
 #define NAV_WALK_SPEED_MS     200     // ms per gait phase during line following
-#define NAV_BASE_HIP_DELTA    20      // base hip swing degrees
+#define NAV_BASE_HIP_DELTA    15      // base hip swing degrees (tight, stable stride)
 #define NAV_FEMUR_DELTA       20      // femur lift degrees
 
 // ToF detection thresholds (mm)
@@ -341,27 +355,262 @@ inline NavResult navLineFollowUntil(int maxCycles, uint8_t stopFlags,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CALIBRATED TURNS
+// POST-TURN LINE ALIGNMENT
+// ─────────────────────────────────────────────────────────────────────────────
+// After a turn, the line sensor may not see the new line immediately.
+// Walk forward a few steps to re-find the line.
+
+inline bool navAlignToLine(int maxSteps = NAV_ALIGN_MAX_STEPS) {
+    Serial.println("[NAV] Aligning to line...");
+    // First check if we're already on the line
+    serviceBackground();
+    if (lineFound()) {
+        Serial.println("[NAV] Already aligned");
+        return true;
+    }
+    // Walk forward slowly until line found
+    for (int i = 0; i < maxSteps && !compStop; i++) {
+        walkForward(1, NAV_WALK_SPEED_MS, 0);
+        serviceBackground();
+        if (lineFound()) {
+            Serial.println("[NAV] Line re-acquired after alignment walk");
+            return true;
+        }
+    }
+    Serial.println("[NAV] Alignment FAILED — line not found");
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LINE CENTERING — walk small steps to reach lineError ≈ 0
+// Called after every turn to align the robot body squarely on the new line.
+//
+// Algorithm:
+//   - Walk 1 step at a time (NAV_CENTER_STEP_MS ms, slow)
+//   - After each step, read lineErrorMm() with PD steering
+//   - Stop when |err| < NAV_CENTER_TOL_MM  OR  line lost  OR  maxSteps reached
+//
+// If the line is not found after the turn, it also tries navAlignToLine() first.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#define NAV_CENTER_TOL_MM    8.0f   // acceptable centering error (mm)
+#define NAV_CENTER_STEP_MS   250    // ms per gait phase during centering (slow)
+#define NAV_CENTER_MAX_STEPS 6      // max walk steps for centering
+
+inline void navCenterOnLine() {
+    // First make sure we can even see the line
+    serviceBackground();
+    if (!lineFound()) {
+        Serial.println("[NAV] Center: no line — trying align first");
+        navAlignToLine(NAV_ALIGN_MAX_STEPS);
+        serviceBackground();
+    }
+
+    int femDelta[4];
+    for (int l = 0; l < 4; l++)
+        femDelta[l] = NAV_FEMUR_DELTA + WALK_FEMUR_TRIM[l];
+
+    const uint8_t seq[6][2] = {
+        {0,                       NAV_FL | NAV_BR},
+        {NAV_FL | NAV_BR,         NAV_FL | NAV_BR},
+        {NAV_FL | NAV_BR,         0},
+        {0,                       NAV_FR | NAV_BL},
+        {NAV_FR | NAV_BL,         NAV_FR | NAV_BL},
+        {NAV_FR | NAV_BL,         0}
+    };
+
+    float prevErr = 0;
+    Serial.println("[NAV] CenterOnLine: start");
+
+    for (int step = 0; step < NAV_CENTER_MAX_STEPS && !compStop; step++) {
+        serviceBackground();
+        float err = lineFound() ? lineErrorMm() : prevErr;
+        Serial.printf("[NAV] Center step %d: err=%.1fmm\n", step, err);
+
+        // Done if well-centered
+        if (fabsf(err) < NAV_CENTER_TOL_MM && step > 0) {
+            Serial.printf("[NAV] Centered! err=%.1fmm\n", err);
+            break;
+        }
+
+        // PD steering correction for this step
+        float dErr = err - prevErr;
+        float correction = NAV_KP * err + NAV_KD * dErr;
+        correction = constrain(correction, -(float)NAV_MAX_CORRECTION, (float)NAV_MAX_CORRECTION);
+        prevErr = err;
+
+        int hipL = constrain(NAV_BASE_HIP_DELTA + (int)roundf(correction), 0, 45);
+        int hipR = constrain(NAV_BASE_HIP_DELTA - (int)roundf(correction), 0, 45);
+
+        // Execute one 6-phase gait cycle (slow for precision)
+        for (int p = 0; p < 6 && !compStop; p++) {
+            int t[4][3];
+            navns::buildSteerPose(t, WALK_HIP_BASE, WALK_HIP_SIGN, hipL, hipR,
+                                  WALK_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta,
+                                  seq[p][0], seq[p][1]);
+            moveToTarget(t, NAV_CENTER_STEP_MS);
+        }
+    }
+
+    // Return to standing, settled
+    moveToPose(1, 300);
+    waitMs(100);
+    serviceBackground();
+    Serial.printf("[NAV] CenterOnLine done: final err=%.1fmm\n",
+                  lineFound() ? lineErrorMm() : 999.0f);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CALIBRATED TURNS  (gyro-assisted + post-turn line centering)
+//
+// Full sequence for each 90° turn:
+//   1. Mark gyro active (mpuSetStationary(false))
+//   2. Record yaw BEFORE turn
+//   3. Execute step-count turn (baseline dead-reckoning)
+//   4. Wait 80ms for gyro filter to settle
+//   5. Read actual turned angle; add correction steps if short by > tolerance
+//   6. Mark gyro stationary (mpuSetStationary(true))
+//   7. navCenterOnLine() — walk with PD until line error < 8mm
+//
+// If MPU is not ready, falls back to pure step-count + centering.
 // ─────────────────────────────────────────────────────────────────────────────
 
 inline bool navTurnLeft90() {
     if (compStop) return false;
-    Serial.println("[NAV] Turn LEFT 90deg");
-    turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, false);
+    Serial.println("[NAV] Turn LEFT 90deg — gyro ON");
+
+    // ── Step 1: Gyro ON ───────────────────────────────────────────────────
+    mpuSetStationary(false);
+
+    if (mpuIsReady()) {
+        float yawBefore = mpuGetYaw();
+
+        // ── Step 2: Primary step-count turn ──────────────────────────────
+        turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, false);
+        serviceBackground();
+        waitMs(80);  // let EMA filter settle
+
+        // ── Step 3: Measure actual rotation ──────────────────────────────
+        float turned = mpuGetYaw() - yawBefore;   // CCW is positive
+        float remain = 90.0f - turned;
+        Serial.printf("[NAV] Left90 gyro: turned=%.1f°  remain=%.1f°\n", turned, remain);
+
+        // ── Step 4: Fine correction if still short ────────────────────────
+        if (remain > NAV_TURN_TOL_DEG && remain < 50.0f) {
+            int xSteps = constrain((int)(remain / 20.0f) + 1, 1, 5);
+            Serial.printf("[NAV] Left90 correction: +%d steps\n", xSteps);
+            turnGait(xSteps, NAV_TURN_SPEED_MS, false);
+            serviceBackground();
+            waitMs(60);
+        }
+        float finalYaw = mpuGetYaw() - yawBefore;
+        Serial.printf("[NAV] Left90 final: turned=%.1f° (target 90°)\n", finalYaw);
+
+    } else {
+        // Fallback: pure step-count
+        Serial.println("[NAV] Left90 — MPU not ready, step-count only");
+        turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, false);
+    }
+
+    // ── Step 5: Gyro OFF → stationary drift correction ───────────────────
+    mpuSetStationary(true);
+    Serial.println("[NAV] Left90 — gyro OFF, centering on line");
+
+    // ── Step 6: Center on line (walk until lineError ≈ 0) ────────────────
+    navCenterOnLine();
+
     return !compStop;
 }
 
 inline bool navTurnRight90() {
     if (compStop) return false;
-    Serial.println("[NAV] Turn RIGHT 90deg");
-    turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, true);
+    Serial.println("[NAV] Turn RIGHT 90deg — gyro ON");
+
+    // ── Step 1: Gyro ON ───────────────────────────────────────────────────
+    mpuSetStationary(false);
+
+    if (mpuIsReady()) {
+        float yawBefore = mpuGetYaw();
+
+        // ── Step 2: Primary step-count turn ──────────────────────────────
+        turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, true);
+        serviceBackground();
+        waitMs(80);
+
+        // ── Step 3: Measure actual rotation ──────────────────────────────
+        float turned = yawBefore - mpuGetYaw();   // CW = yaw decreases
+        float remain = 90.0f - turned;
+        Serial.printf("[NAV] Right90 gyro: turned=%.1f°  remain=%.1f°\n", turned, remain);
+
+        // ── Step 4: Fine correction if still short ────────────────────────
+        if (remain > NAV_TURN_TOL_DEG && remain < 50.0f) {
+            int xSteps = constrain((int)(remain / 20.0f) + 1, 1, 5);
+            Serial.printf("[NAV] Right90 correction: +%d steps\n", xSteps);
+            turnGait(xSteps, NAV_TURN_SPEED_MS, true);
+            serviceBackground();
+            waitMs(60);
+        }
+        float finalYaw = yawBefore - mpuGetYaw();
+        Serial.printf("[NAV] Right90 final: turned=%.1f° (target 90°)\n", finalYaw);
+
+    } else {
+        Serial.println("[NAV] Right90 — MPU not ready, step-count only");
+        turnGait(NAV_TURN_STEPS_90, NAV_TURN_SPEED_MS, true);
+    }
+
+    // ── Step 5: Gyro OFF ─────────────────────────────────────────────────
+    mpuSetStationary(true);
+    Serial.println("[NAV] Right90 — gyro OFF, centering on line");
+
+    // ── Step 6: Center on line ────────────────────────────────────────────
+    navCenterOnLine();
+
     return !compStop;
 }
 
 inline bool navTurn180() {
     if (compStop) return false;
-    Serial.println("[NAV] Turn 180deg");
-    turnGait(NAV_TURN_STEPS_180, NAV_TURN_SPEED_MS, true);
+    Serial.println("[NAV] Turn 180deg — gyro ON");
+
+    // ── Step 1: Gyro ON ───────────────────────────────────────────────────
+    mpuSetStationary(false);
+
+    if (mpuIsReady()) {
+        float yawBefore = mpuGetYaw();
+
+        // ── Step 2: Primary step-count turn ──────────────────────────────
+        turnGait(NAV_TURN_STEPS_180, NAV_TURN_SPEED_MS, true);
+        serviceBackground();
+        waitMs(80);
+
+        // ── Step 3: Measure actual rotation ──────────────────────────────
+        float turned = yawBefore - mpuGetYaw();
+        float remain = 180.0f - turned;
+        Serial.printf("[NAV] 180 gyro: turned=%.1f°  remain=%.1f°\n", turned, remain);
+
+        // ── Step 4: Fine correction ───────────────────────────────────────
+        if (remain > NAV_TURN_TOL_DEG && remain < 90.0f) {
+            int xSteps = constrain((int)(remain / 20.0f) + 1, 1, 6);
+            Serial.printf("[NAV] 180 correction: +%d steps\n", xSteps);
+            turnGait(xSteps, NAV_TURN_SPEED_MS, true);
+            serviceBackground();
+            waitMs(60);
+        }
+        float finalYaw = yawBefore - mpuGetYaw();
+        Serial.printf("[NAV] 180 final: turned=%.1f° (target 180°)\n", finalYaw);
+
+    } else {
+        Serial.println("[NAV] 180 — MPU not ready, step-count only");
+        turnGait(NAV_TURN_STEPS_180, NAV_TURN_SPEED_MS, true);
+    }
+
+    // ── Step 5: Gyro OFF ─────────────────────────────────────────────────
+    mpuSetStationary(true);
+    Serial.println("[NAV] 180 — gyro OFF, centering on line");
+
+    // ── Step 6: Center on line ────────────────────────────────────────────
+    navCenterOnLine();
+
     return !compStop;
 }
 
@@ -459,33 +708,6 @@ inline uint8_t navReadColor(uint32_t timeoutMs = 3000) {
     }
     Serial.println("[NAV] Color timeout — defaulting to UNKNOWN");
     return 0;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST-TURN LINE ALIGNMENT
-// ─────────────────────────────────────────────────────────────────────────────
-// After a turn, the line sensor may not see the new line immediately.
-// Walk forward a few steps to re-find the line.
-
-inline bool navAlignToLine(int maxSteps = NAV_ALIGN_MAX_STEPS) {
-    Serial.println("[NAV] Aligning to line...");
-    // First check if we're already on the line
-    serviceBackground();
-    if (lineFound()) {
-        Serial.println("[NAV] Already aligned");
-        return true;
-    }
-    // Walk forward slowly until line found
-    for (int i = 0; i < maxSteps && !compStop; i++) {
-        walkForward(1, NAV_WALK_SPEED_MS, 0);
-        serviceBackground();
-        if (lineFound()) {
-            Serial.println("[NAV] Line re-acquired after alignment walk");
-            return true;
-        }
-    }
-    Serial.println("[NAV] Alignment FAILED — line not found");
-    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

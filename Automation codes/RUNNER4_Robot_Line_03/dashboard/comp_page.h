@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Arduino.h>
 
 // =============================================================================
@@ -311,7 +311,7 @@ select:focus,input:focus{border-color:var(--ac)}
     <button class="arm-btn open" onclick="armCmd('open')">✋ Open</button>
     <button class="arm-btn close" onclick="armCmd('close')">✊ Close</button>
   </div>
-  <!-- Servo angle tuning sliders — GPIO 47 (Lift) and GPIO 21 (Grip) -->
+  <!-- Servo angle tuning sliders — GPIO 47 (Lift) and GPIO 44 (Grip) -->
   <details style="margin-top:14px">
     <summary style="cursor:pointer;font-size:12px;color:var(--mut);user-select:none">⚙️ Angle Calibration (expand)</summary>
     <div style="margin-top:10px;display:grid;gap:10px">
@@ -327,7 +327,7 @@ select:focus,input:focus{border-color:var(--ac)}
         </div>
       </div>
       <div>
-        <label style="font-size:12px;color:var(--mut)">Grip Servo (GPIO 21) — <span id="gripVal">140</span>°</label>
+        <label style="font-size:12px;color:var(--mut)">Grip Servo (GPIO 44) — <span id="gripVal">140</span>°</label>
         <input type="range" min="0" max="180" value="140" id="gripSlider"
                style="width:100%;accent-color:#0891b2"
                oninput="$('gripVal').textContent=this.value"

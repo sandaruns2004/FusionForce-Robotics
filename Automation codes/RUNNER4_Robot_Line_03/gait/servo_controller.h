@@ -1,15 +1,16 @@
 #pragma once
 // =============================================================================
-// gait/servo_controller.h — 12-DOF Quadruped Servo Driver & Interpolation Engine
+// gait/servo_controller.h — 12-DOF Quadruped Servo Driver & Interpolation
+// Engine
 //
 // PCA9685 I2C servo controller, 12-servo channel mappings, preset poses,
 // and linear multi-servo interpolation engine.
 // =============================================================================
 
+#include "../config/robot_config.h"
+#include <Adafruit_PWMServoDriver.h>
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_PWMServoDriver.h>
-#include "../config/robot_config.h"
 
 // Forward declarations of background service (defined in main .ino)
 extern void serviceBackground();
@@ -20,12 +21,10 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 
 // -- Channel Map & Mirroring --------------------------------------------------
 // legChannels[leg][0=hip, 1=femur, 2=tibia]; leg: 0=FL, 1=FR, 2=BL, 3=BR
-const uint8_t legChannels[4][3] = {
-    {FL_HIP, FL_FEMUR, FL_TIBIA},
-    {FR_HIP, FR_FEMUR, FR_TIBIA},
-    {BL_HIP, BL_FEMUR, BL_TIBIA},
-    {BR_HIP, BR_FEMUR, BR_TIBIA}
-};
+const uint8_t legChannels[4][3] = {{FL_HIP, FL_FEMUR, FL_TIBIA},
+                                   {FR_HIP, FR_FEMUR, FR_TIBIA},
+                                   {BL_HIP, BL_FEMUR, BL_TIBIA},
+                                   {BR_HIP, BR_FEMUR, BR_TIBIA}};
 const int legMirror[4] = {1, -1, 1, -1};
 
 // -- Current Live Servo Angles (16 channels) ----------------------------------
@@ -36,9 +35,9 @@ int servoAngles[16] = {0};
 
 int poseAngles[13][4][3] = {
     // 0 INITIAL (HOME)
-    {{45, 80, 160}, {94, 80, 0}, {94, 35, 10}, {45, 92, 160}},
+    {{45, 70, 139}, {94, 80, 25}, {94, 70, 5}, {45, 92, 160}},
     // 1 STANDING
-    {{45, 15, 105}, {94, 140, 50}, {94, 94, 55}, {45, 37, 115}},
+    {{45, 15, 100}, {94, 140, 70}, {74, 135, 49}, {34, 21, 99}},
     // 2 LOW CROUCH
     {{45, 110, 140}, {94, 110, 40}, {94, 110, 140}, {45, 110, 140}},
     // 3 LOW STAND
@@ -60,8 +59,7 @@ int poseAngles[13][4][3] = {
     // 11 WALK A enhanced
     {{15, 45, 130}, {94, 135, 45}, {94, 111, 55}, {75, 57, 130}},
     // 12 WALK B enhanced
-    {{15, 20, 115}, {124, 115, 30}, {64, 91, 30}, {75, 32, 115}}
-};
+    {{15, 20, 115}, {124, 115, 30}, {64, 91, 30}, {75, 32, 115}}};
 
 // =============================================================================
 // SERVO HARDWARE HELPERS
@@ -95,8 +93,10 @@ inline void setLegHome(int leg) {
 // Linear interpolation of all 12 servos over speedMs (0 = instant)
 //
 // PERFORMANCE FIX:
-//  - Instant mode (speedMs == 0): writes all servos immediately, single background tick.
-//  - Timed mode: uses fixed number of steps (max 30) capped at one step per ~speedMs/30 ms,
+//  - Instant mode (speedMs == 0): writes all servos immediately, single
+//  background tick.
+//  - Timed mode: uses fixed number of steps (max 30) capped at one step per
+//  ~speedMs/30 ms,
 //    preventing HTTP requests from stalling motion.
 inline void moveToTarget(const int targetAngles[4][3], int speedMs) {
   if (speedMs <= 0) {

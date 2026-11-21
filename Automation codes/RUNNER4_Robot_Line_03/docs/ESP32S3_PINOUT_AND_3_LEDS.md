@@ -5,11 +5,12 @@ This document defines the complete hardware pin allocation for the **RUNNER4 Qua
 It covers:
 1. **9-channel TCRT5000 line sensor array** (ADC1 only — WiFi safe)
 2. **Two I2C buses** (PCA9685 + VL53L0X on GPIO 11/12; TCS34725 on GPIO 41/42)
-3. **VL53L0X ToF distance sensor and XSHUT wiring**
-4. **TCS34725 color sensor LED control**
-5. **4-pin status RGB LED** (common cathode)
-6. **3× Hardware pushbuttons** (GPIO 38, 39, 40 with internal pull-up)
-7. **Full ESP32-S3 DevKit header pinout diagram**
+3. **VL53L0X ToF distance sensors & XSHUT wiring** (Front=GPIO 13, Right=GPIO 14, Left=GPIO 21)
+4. **2-DOF Robotic Arm servos** (GPIO 47 Lift + GPIO 44 Grip direct LEDC PWM)
+5. **TCS34725 color sensor LED control** (GPIO 15)
+6. **4-pin status RGB LED** (GPIO 16, 17, 18 common cathode)
+7. **3× Hardware pushbuttons** (GPIO 38, 39, 40 with internal pull-up)
+8. **Full ESP32-S3 DevKit header pinout diagram**
 
 ---
 
@@ -28,10 +29,11 @@ It covers:
 | **10** | Line S9 (Far Left / Leftmost) | 9× TCRT5000 Array | Analog In | ADC1_CH9 (WiFi AP safe) |
 | **11** | I2C SDA0 | PCA9685 + VL53L0X | I2C Data | 4.7kΩ pull-up to 3.3V |
 | **12** | I2C SCL0 | PCA9685 + VL53L0X | I2C Clock | 4.7kΩ pull-up to 3.3V, 400kHz |
-| **13** | VL53L0X XSHUT | Front obstacle ToF | Digital Out | Active LOW reset; current firmware doesn't toggle it |
-| **14** | **VL53L0X Right XSHUT** | Right ToF (if fitted) | Digital Out | Active LOW reset / address setup |
-| **21** | **ARM Grip Servo PWM** | Arm gripper servo (direct) | PWM Out (LEDC ch 9) | Was Left ToF XSHUT — left ToF NOT fitted. Direct servo signal to gripper servo. |
-| **47** | **ARM Lift Servo PWM** | Arm lift servo (direct) | PWM Out (LEDC ch 8) | Free GPIO on right header. Direct servo signal to lift servo. |
+| **13** | **VL53L0X Front XSHUT** | Front ToF | Digital Out | Active LOW reset; sensor remapped to `0x30` |
+| **14** | **VL53L0X Right XSHUT** | Right ToF | Digital Out | Active LOW reset; sensor remapped to `0x31` |
+| **21** | **VL53L0X Left XSHUT** | Left ToF | Digital Out | Active LOW reset; sensor remapped to `0x32` |
+| **47** | **ARM Lift Servo PWM** | Arm lift servo (direct) | PWM Out (LEDC ch 6) | Free GPIO on right header (pin 17). Direct servo signal to lift servo. |
+| **44** | **ARM Grip Servo PWM** | Arm gripper servo (direct) | PWM Out (LEDC ch 7) | Right header pin 3 (U0RXD). Free when USB CDC is used. (Alternate: GPIO 43) |
 | **15** | TCS34725 LED Control | TCS34725 Colour Sensor | Digital Out | HIGH = white LED on, LOW = off |
 | **16** | Status LED — Red | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
 | **17** | Status LED — Green | 4-Pin Common-Cathode RGB | Digital Out | Connect via 330Ω resistor |
@@ -52,7 +54,7 @@ It covers:
 
 ## 2. Separate I2C Buses & Address Map
 
-The PCA9685 and VL53L0X share the main bus (**SDA: GPIO 11**, **SCL: GPIO 12**). The TCS34725 uses the ESP32-S3's second I2C controller (**SDA: GPIO 41**, **SCL: GPIO 42**). Both sensors can therefore retain address `0x29` without colliding. GPIO 41/42 are marked free in this project's pin diagram and are not used by the current sketch.
+The PCA9685 and all three VL53L0X ToF sensors share the main bus (**SDA: GPIO 11**, **SCL: GPIO 12**). The TCS34725 uses the ESP32-S3's second I2C controller (**SDA: GPIO 41**, **SCL: GPIO 42**). The VL53L0X sensors boot at address `0x29`; `tofBegin()` enumerates them one-at-a-time using XSHUT pins and assigns each a unique runtime address.
 
 | Device | Default Boot Address | Runtime Address | How Address Is Set |
 | :--- | :---: | :---: | :--- |
@@ -75,10 +77,10 @@ The VL53L0X and TCS34725 may share the same numeric address because they are phy
 | **GND** | Common **GND** | Must share ground with ESP32 |
 | **SDA** | **GPIO 11** | Main I2C0 SDA shared with PCA9685 |
 | **SCL** | **GPIO 12** | Main I2C0 SCL shared with PCA9685 |
-| **XSHUT** | **GPIO 13** | Optional shutdown line; current firmware does not toggle it |
+| **XSHUT (Front)** | **GPIO 13** | Dedicated shutdown line |
+| **XSHUT (Right)** | **GPIO 14** | Dedicated shutdown line (Right ToF) |
+| **XSHUT (Left)** | **GPIO 21** | Dedicated shutdown line (Left ToF) |
 | **GPIO1 (Interrupt)** | *Leave unconnected* | Not needed for polling |
-
-The current `RUNNER4_Robot_Line_03` firmware implements one VL53L0X sensor on GPIO 11/12. GPIO 41/42 carry the color sensor's second I2C bus and do not overlap the documented XSHUT pins.
 
 ---
 
@@ -93,8 +95,8 @@ Visual layout of the ESP32-S3 DevKit (44-pin board):
                        └───────────────────────┘
           [LEFT HEADER]                         [RIGHT HEADER]
   3.3V Logic ────────── 3V3                 GND ────────── Common Ground
-  3.3V Logic ────────── 3V3                GPIO43 ──────── (UART0 TX)
-  Board Reset ───────── EN                 GPIO44 ──────── (UART0 RX)
+  3.3V Logic ────────── 3V3                GPIO43 ──────── (UART0 TX / Arm Alt)
+  Board Reset ───────── EN                 GPIO44 ──────── ARM Grip Servo (LEDC ch7)
   Line S3 (ADC1) ────── GPIO4               GPIO1 ──────── Line S1 (ADC1)
   Line S4 (ADC1) ────── GPIO5               GPIO2 ──────── Line S2 (ADC1)
   Line S5 Center ────── GPIO6              GPIO42 ──────── Color I2C1 SCL
@@ -107,13 +109,13 @@ Visual layout of the ESP32-S3 DevKit (44-pin board):
   USB D- (Native) ───── GPIO19             GPIO35 ──────── (SPI/PSRAM)
   USB D+ (Native) ───── GPIO20              GPIO0 ──────── (Strapping / Boot)
   (Strapping) ───────── GPIO3              GPIO45 ──────── (Strapping)
-  (Strapping) ───────── GPIO46             GPIO48 ──────── (Onboard RGB)
-  Line S8 (ADC1) ────── GPIO9              GPIO47 ──────── ARM Lift Servo (LEDC ch8)
-  Line S9 (ADC1) ────── GPIO10             GPIO21 ──────── ARM Grip Servo (LEDC ch9)
-  I2C SDA ───────────── GPIO11              20/19 ──────── (USB D+/D-)
-  I2C SCL ───────────── GPIO12               GND  ──────── Common Ground
-  ToF Front XSHUT ───── GPIO13               5V   ──────── 5V Reg In / VBUS
-  ToF Right XSHUT ───── GPIO14               GND  ──────── Common Ground
+  (Strapping) ───────── GPIO46             GPIO47 ──────── ARM Lift Servo (LEDC ch6)
+  Line S8 (ADC1) ────── GPIO9              GPIO21 ──────── VL53L0X Left XSHUT
+  Line S9 (ADC1) ────── GPIO10              20/19 ──────── (USB D+/D-)
+  I2C SDA ───────────── GPIO11               GND  ──────── Common Ground
+  I2C SCL ───────────── GPIO12               5V   ──────── 5V Reg In / VBUS
+  ToF Front XSHUT ───── GPIO13               GND  ──────── Common Ground
+  ToF Right XSHUT ───── GPIO14               NC   ──────── (Not Connected)
                        └───────────────────────┘
 ```
 
@@ -212,18 +214,6 @@ bool isButtonPressed(uint8_t pin) {
   }
   return false;
 }
-
-// Example usage inside loop():
-// if (isButtonPressed(BTN_PIN_1)) {
-//   Serial.println("[BTN1] Toggle Walk / Line Follow");
-// }
-// if (isButtonPressed(BTN_PIN_2)) {
-//   Serial.println("[BTN2] Move to STANDING pose");
-//   moveToPose(1, 500);
-// }
-// if (isButtonPressed(BTN_PIN_3)) {
-//   Serial.println("[BTN3] Start Line Cal sweep");
-// }
 ```
 
 ---
@@ -233,8 +223,8 @@ bool isButtonPressed(uint8_t pin) {
 ```
 [2S LiPo Battery: 7.4V - 8.4V]
        │
-       ├──► [6V 5A-8A High-Current BEC / Buck] ────► PCA9685 V+ (Servos ONLY)
-       │                                              (Powers 12× MG90 Servos)
+       ├──► [6V 5A-8A High-Current BEC / Buck] ────► PCA9685 V+ (Leg Servos) & Arm Servos VCC
+       │                                              (Powers 12× Leg Servos + 2× Arm Servos)
        │
        └──► [5V 2A-3A Logic Buck Regulator] ───────► ESP32-S3 5V / VIN pin
                                                        │
@@ -260,5 +250,5 @@ bool isButtonPressed(uint8_t pin) {
 | **GPIO 19, 20** | Native USB (D- / D+) used for USB CDC serial monitor and sketch flashing. |
 | **GPIO 26–32** | Hard-wired to internal Quad-SPI Flash memory. |
 | **GPIO 33–37** | Connected to internal Octal-SPI PSRAM/Flash on most ESP32-S3 modules. |
-| **GPIO 43, 44** | Hardware UART0 (TX/RX) serial interface. |
+| **GPIO 43, 44** | Hardware UART0 (TX/RX) serial interface. Free for general I/O or PWM (such as ARM Grip on **GPIO 44**) when native USB CDC is enabled for programming and monitoring. |
 | **GPIO 48** | Pre-wired to onboard addressable WS2812 RGB LED on DevKit boards. |

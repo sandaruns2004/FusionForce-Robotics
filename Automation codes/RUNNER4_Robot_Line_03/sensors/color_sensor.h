@@ -29,3 +29,6 @@ bool        colorSensorOnline();
 uint8_t     colorConfirmed();     // stable voted colour, 0 if none yet
 uint8_t     colorStoredBall();    // ball colour stored in flash, 0 if none
 const char *colorName(uint8_t id);
+
+// Modular implementation inclusion for Arduino sketch structure
+#include "color_sensor.cpp"

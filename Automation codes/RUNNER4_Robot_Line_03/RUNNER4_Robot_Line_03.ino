@@ -19,21 +19,24 @@
 //   /color/data /color/config /color/set /color/cmd /color/wifi /color/export
 //   /line/data  /line/config  /line/set  /line/cmd  /line/wifi  /line/export
 //   /lf/start   /lf/stop      /lf/status /lf/config /lf/set     /lf/cmd
-//   /tof/data
+//   /tof/data  /tof/diag
 //
-// SKETCH FOLDER (ALL files in ONE folder named RUNNER4_Robot_Line):
-//   RUNNER4_Robot_Line.ino     <- this file (robot)
-//   robot_page.h               <- robot web page
-//   color_sensor.h / .cpp      <- colour sensor module (LED pin GPIO 15)
-//   color_page.h               <- colour web page
-//   line_sensor.h / .cpp       <- line array module
-//   line_page.h                <- line array web page
+// SKETCH FOLDER (Modular project structure):
+//   RUNNER4_Robot_Line_03.ino  <- main robot entry point (cooperative loop)
+//   config/                    <- robot_config.h (centralized pin map, settings)
+//   arm/                       <- arm_interface.h (2-DOF servo arm control)
+//   gait/                      <- kinematics.h, servo_controller.h, trot_gait.h, line_follow.h
+//   sensors/                   <- color_sensor, line_sensor, tof_sensor
+//   tasks/                     <- competition_fsm.h, nav, sort, search, push, wall
+//   dashboard/                 <- web pages for robot, color, line, ToF, arm, LF
 //
 // WIRING (v5.0 PIN MAP - ADC1 only, because WiFi AP blocks ADC2 on ESP32-S3)
-//   Main I2C0 (PCA9685 0x40 + VL53L0X ToF):
-//     GPIO 11 (SDA) -> PCA9685 SDA and VL53L0X SDA
-//     GPIO 12 (SCL) -> PCA9685 SCL and VL53L0X SCL
-//     GPIO 13       -> VL53L0X Front XSHUT (active-LOW reset)
+//   Main I2C0 (PCA9685 0x40 + 3x VL53L0X ToF at 0x30/0x31/0x32):
+//     GPIO 11 (SDA) -> PCA9685 SDA and all 3x VL53L0X SDA
+//     GPIO 12 (SCL) -> PCA9685 SCL and all 3x VL53L0X SCL
+//     GPIO 13       -> VL53L0X Front XSHUT (boot addr 0x29 -> 0x30)
+//     GPIO 14       -> VL53L0X Right XSHUT (boot addr 0x29 -> 0x31)
+//     GPIO 21       -> VL53L0X Left  XSHUT (boot addr 0x29 -> 0x32)
 //     3.3V / GND    -> PCA9685 VCC / VL53L0X VIN and common GND
 //   Color I2C1 (TCS34725 0x29 - separate hardware I2C controller):
 //     GPIO 41 (SDA) -> TCS34725 SDA
@@ -58,7 +61,7 @@
 //   buttons work and both sensors keep updating while the robot walks.
 //
 // CHANNEL MAP:
-//   CH 0:FL_HIP  CH 1:FL_FEMUR  CH 2:FL_TIBIA
+//   CH 0:FL_HIP  CH 1:FL_FEMUR  CH15:FL_TIBIA (remapped from CH2)
 //   CH 3:FR_HIP  CH 4:FR_FEMUR  CH 5:FR_TIBIA
 //   CH10:BL_HIP  CH11:BL_FEMUR  CH14:BL_TIBIA
 //   CH 6:BR_HIP  CH 8:BR_FEMUR  CH 9:BR_TIBIA
@@ -81,11 +84,17 @@
 #include "sensors/line_sensor.h"     // line array module API
 #include "gait/line_follow.h"        // line-following gait + /linefollow web page
 #include "dashboard/robot_page.h"    // INDEX_HTML
+#include "dashboard/arm_page.h"      // ARM_PAGE - arm control UI at /arm
+#include "dashboard/mpu_page.h"      // MPU_PAGE - gyro dashboard UI at /mpu
 
 
 // ToF sensor module (header-only implementation)
 #define TOF_IMPLEMENTATION
 #include "sensors/tof_sensor.h" // 3x VL53L0X + /tof web page
+
+// MPU6050 gyroscope (header-only implementation, uses Wire = GPIO 11/12)
+#define MPU_IMPLEMENTATION
+#include "sensors/mpu6050.h"    // yaw integration + /mpu web API
 
 // Competition state machine (includes nav_primitives, arm_interface,
 // grid_search, wall_follow, obstacle_push, color_sort)
@@ -214,6 +223,7 @@ void serviceBackground() {
   }
   linePoll();
   tofPoll(); // non-blocking ToF (continuous mode)
+  mpuPoll(); // MPU6050 gyro EMA + yaw integration (rate-limited internally)
 }
 
 // Wait ms while keeping WiFi + colour sensor + line array alive
@@ -237,14 +247,14 @@ void waitMs(uint32_t ms) {
 void i2cScan() {
   Serial.println("-------------------------------------------------");
   Serial.println("Main I2C0 Bus Scan (SDA=GPIO 11, SCL=GPIO 12):");
-  Serial.println("  Expected devices: 0x40 (PCA9685), 0x29 (VL53L0X ToF)");
+  Serial.println("  Expected: 0x40 (PCA9685), 0x30/0x31/0x32 (ToF x3), 0x68 (MPU6050)");
   int found = 0;
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) {
       Serial.printf("  [OK] Device ACK at 0x%02X%s%s\n", addr,
                     addr == 0x40 ? " (PCA9685)" : "",
-                    (addr == 0x29 || addr == 0x30) ? " (VL53L0X ToF)" : "");
+                    (addr==0x30)?" (ToF Front)":(addr==0x31)?" (ToF Right)":(addr==0x32)?" (ToF Left)":(addr==0x40)?" (PCA9685)":"");
       found++;
     }
   }
@@ -660,55 +670,17 @@ void setup() {
   // Competition FSM (separate root: /comp/...)
   competitionBegin(server);
 
-  // Arm: 2 servos wired directly to GPIO 47 (Lift) and GPIO 21 (Grip) via LEDC
-  // PWM
+  // Arm: Lift=GPIO47, Grip=GPIO44 (direct LEDC PWM, 50Hz, 14-bit)
+  // armBegin() registers /arm dashboard page + all /arm/* API routes
+  // with Preferences-backed config (gopen/gclose/lup/ldown/gs/ls/pause)
   armInit();
+  armBegin(server);
 
-  // /arm/* routes � test/calibrate arm servos directly from browser
-  server.on("/arm/pick", []() {
-    addCORS();
-    armPickBall();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"pick\"}");
-  });
-  server.on("/arm/place", []() {
-    addCORS();
-    armPlaceBall();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"place\"}");
-  });
-  server.on("/arm/up", []() {
-    addCORS();
-    armUp();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"up\"}");
-  });
-  server.on("/arm/down", []() {
-    addCORS();
-    armDown();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"down\"}");
-  });
-  server.on("/arm/open", []() {
-    addCORS();
-    armOpen();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"open\"}");
-  });
-  server.on("/arm/close", []() {
-    addCORS();
-    armClose();
-    server.send(200, "application/json", "{\"ok\":true,\"cmd\":\"close\"}");
-  });
-  server.on("/arm/set", []() {
-    addCORS();
-    if (server.hasArg("lift")) {
-      int deg = constrain(server.arg("lift").toInt(), 0, 180);
-      armSetLift(deg);
-      Serial.printf("[ARM] Manual: lift=%d\xC2\xB0\n", deg);
-    }
-    if (server.hasArg("grip")) {
-      int deg = constrain(server.arg("grip").toInt(), 0, 180);
-      armSetGrip(deg);
-      Serial.printf("[ARM] Manual: grip=%d\xC2\xB0\n", deg);
-    }
-    server.send(200, "application/json", "{\"ok\":true}");
-  });
+  // MPU6050 gyroscope (I2C 0x68 on main bus GPIO 11/12)
+  // mpuPageBegin registers GET /mpu (dashboard HTML)
+  // mpuBegin registers /mpu/data /mpu/zero /mpu/cal + runs startup calibration
+  mpuPageBegin(server);
+  mpuBegin(server, AP_SSID);
 
   server.begin();
   serverStarted = true;
@@ -718,10 +690,9 @@ void setup() {
   Serial.println("  Line:       http://192.168.4.1/line");
   Serial.println("  LineFollow: http://192.168.4.1/linefollow");
   Serial.println("  ToF:        http://192.168.4.1/tof");
+  Serial.println("  Gyro:       http://192.168.4.1/mpu");
   Serial.println("  Competition: /comp/start /comp/stop /comp/status");
-  Serial.println("  Arm:         /arm/pick /arm/place /arm/up /arm/down "
-                 "/arm/open /arm/close");
-  Serial.println("  Arm tune:    /arm/set?lift=90&grip=45");
+  Serial.println("  Arm:        http://192.168.4.1/arm  (full dashboard)");
   Serial.println(
       "  Dashboard:  http://192.168.4.1/comp  ? START HERE FOR COMPETITION");
 }

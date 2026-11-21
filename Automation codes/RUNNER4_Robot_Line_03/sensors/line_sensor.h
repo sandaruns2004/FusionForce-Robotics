@@ -5,7 +5,7 @@
 //   Set  : /line/set      Cmd  : /line/cmd       Health : /line/wifi
 //   Export constants : /line/export
 // Same architecture as color_sensor.*: own routes, own flash config (NVS),
-// non-blocking poll(), anonymous-namespace internals.
+// non-blocking poll(), internal namespace isolation.
 //
 // PIN RULES (ESP32-S3):
 //   * WiFi AP is ON  -> ADC2 (GPIO 11-20) is unusable. Use ADC1 only = GPIO 1..10.
@@ -41,3 +41,6 @@ bool    lineSafeStop();        // lost longer than the failsafe limit
 
 // Override EMA alpha for line-follow mode (pass -1 to restore previous value)
 void    lineSetAlpha(float newAlpha);
+
+// Modular implementation inclusion for Arduino sketch structure
+#include "line_sensor.cpp"

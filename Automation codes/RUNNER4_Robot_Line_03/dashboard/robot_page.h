@@ -139,6 +139,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
     <a class="btn btn-line" href="/linefollow" style="background:linear-gradient(135deg,#0f766e,#2dd4bf)">&#129302; Line Follow</a>
     <a class="btn btn-col" href="/color">&#127912; Colour Sensor</a>
     <a class="btn btn-col" href="/tof" style="background:linear-gradient(135deg,#0e7490,#06b6d4)">&#128225; ToF Sensors</a>
+    <a class="btn btn-col" href="/arm" style="background:linear-gradient(135deg,#9333ea,#c084fc)">&#129482; Robot Arm</a>
+    <a class="btn btn-col" href="/mpu" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">&#127996; Gyro (MPU)</a>
     <a class="btn btn-comp" href="/comp">&#127942; Competition</a>
     <a class="btn btn-col" href="/health">System Health</a>
     <button class="btn btn-sw" onclick="doSweep()">&#9654; Sweep</button>
@@ -286,8 +288,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 <div class="ch"><span class="badge">FL</span><span class="cn">Front-Left</span><button class="btn-lh" onclick="legHome(0)">HOME</button></div>
 <div class="cb">
 <div class="jr"><span class="jl">HIP &middot; CH0</span><button class="btn-step" onclick="step(0,-1)">-</button><input type="range" min="0" max="180" value="45"  class="sl" id="s0"  oninput="mv(0,this.value)"><button class="btn-step" onclick="step(0,1)">+</button><span class="av" id="v0">45&deg;</span></div>
-<div class="jr"><span class="jl">FEMUR &middot; CH1</span><button class="btn-step" onclick="step(1,-1)">-</button><input type="range" min="0" max="180" value="80"  class="sl" id="s1"  oninput="mv(1,this.value)"><button class="btn-step" onclick="step(1,1)">+</button><span class="av" id="v1">80&deg;</span></div>
-<div class="jr"><span class="jl">TIBIA &middot; CH2</span><button class="btn-step" onclick="step(2,-1)">-</button><input type="range" min="0" max="180" value="160" class="sl" id="s2"  oninput="mv(2,this.value)"><button class="btn-step" onclick="step(2,1)">+</button><span class="av" id="v2">160&deg;</span></div>
+<div class="jr"><span class="jl">FEMUR &middot; CH1</span><button class="btn-step" onclick="step(1,-1)">-</button><input type="range" min="0" max="180" value="70"  class="sl" id="s1"  oninput="mv(1,this.value)"><button class="btn-step" onclick="step(1,1)">+</button><span class="av" id="v1">70&deg;</span></div>
+<div class="jr"><span class="jl">TIBIA &middot; CH15</span><button class="btn-step" onclick="step(15,-1)">-</button><input type="range" min="0" max="180" value="164" class="sl" id="s15"  oninput="mv(15,this.value)"><button class="btn-step" onclick="step(15,1)">+</button><span class="av" id="v15">164&deg;</span></div>
 <div class="pnl"><div class="pt">Forward Kinematics — Foot Position</div><div class="fkr"><div class="fkv"><span>X: </span><b id="fx0">—</b> mm</div><div class="fkv"><span>Y: </span><b id="fy0">—</b> mm</div><div class="fkv"><span>Z: </span><b id="fz0">—</b> mm</div></div></div>
 <div class="pnl"><div class="pt">Inverse Kinematics — Target (mm)</div>
 <div class="ikr"><input class="iki" type="number" id="ix0" placeholder="X" value="50"><input class="iki" type="number" id="iy0" placeholder="Y" value="20"><input class="iki" type="number" id="iz0" placeholder="Z" value="-100"></div>
@@ -299,7 +301,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 <div class="cb">
 <div class="jr"><span class="jl">HIP &middot; CH3</span><button class="btn-step" onclick="step(3,-1)">-</button><input type="range" min="0" max="180" value="94"  class="sl" id="s3"  oninput="mv(3,this.value)"><button class="btn-step" onclick="step(3,1)">+</button><span class="av" id="v3">94&deg;</span></div>
 <div class="jr"><span class="jl">FEMUR &middot; CH4</span><button class="btn-step" onclick="step(4,-1)">-</button><input type="range" min="0" max="180" value="80"  class="sl" id="s4"  oninput="mv(4,this.value)"><button class="btn-step" onclick="step(4,1)">+</button><span class="av" id="v4">80&deg;</span></div>
-<div class="jr"><span class="jl">TIBIA &middot; CH5</span><button class="btn-step" onclick="step(5,-1)">-</button><input type="range" min="0" max="180" value="0"   class="sl" id="s5"  oninput="mv(5,this.value)"><button class="btn-step" onclick="step(5,1)">+</button><span class="av" id="v5">0&deg;</span></div>
+<div class="jr"><span class="jl">TIBIA &middot; CH5</span><button class="btn-step" onclick="step(5,-1)">-</button><input type="range" min="0" max="180" value="25"  class="sl" id="s5"  oninput="mv(5,this.value)"><button class="btn-step" onclick="step(5,1)">+</button><span class="av" id="v5">25&deg;</span></div>
 <div class="pnl"><div class="pt">Forward Kinematics — Foot Position</div><div class="fkr"><div class="fkv"><span>X: </span><b id="fx1">—</b> mm</div><div class="fkv"><span>Y: </span><b id="fy1">—</b> mm</div><div class="fkv"><span>Z: </span><b id="fz1">—</b> mm</div></div></div>
 <div class="pnl"><div class="pt">Inverse Kinematics — Target (mm)</div>
 <div class="ikr"><input class="iki" type="number" id="ix1" placeholder="X" value="50"><input class="iki" type="number" id="iy1" placeholder="Y" value="-20"><input class="iki" type="number" id="iz1" placeholder="Z" value="-100"></div>
@@ -310,8 +312,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 <div class="ch"><span class="badge">BL</span><span class="cn">Back-Left</span><button class="btn-lh" onclick="legHome(2)">HOME</button></div>
 <div class="cb">
 <div class="jr"><span class="jl">HIP &middot; CH10</span><button class="btn-step" onclick="step(10,-1)">-</button><input type="range" min="0" max="180" value="94"  class="sl" id="s10" oninput="mv(10,this.value)"><button class="btn-step" onclick="step(10,1)">+</button><span class="av" id="v10">94&deg;</span></div>
-<div class="jr"><span class="jl">FEMUR &middot; CH11</span><button class="btn-step" onclick="step(11,-1)">-</button><input type="range" min="0" max="180" value="111"  class="sl" id="s11" oninput="mv(11,this.value)"><button class="btn-step" onclick="step(11,1)">+</button><span class="av" id="v11">111&deg;</span></div>
-<div class="jr"><span class="jl">TIBIA &middot; CH14</span><button class="btn-step" onclick="step(14,-1)">-</button><input type="range" min="0" max="180" value="55" class="sl" id="s14" oninput="mv(14,this.value)"><button class="btn-step" onclick="step(14,1)">+</button><span class="av" id="v14">55&deg;</span></div>
+<div class="jr"><span class="jl">FEMUR &middot; CH11</span><button class="btn-step" onclick="step(11,-1)">-</button><input type="range" min="0" max="180" value="70"   class="sl" id="s11" oninput="mv(11,this.value)"><button class="btn-step" onclick="step(11,1)">+</button><span class="av" id="v11">70&deg;</span></div>
+<div class="jr"><span class="jl">TIBIA &middot; CH14</span><button class="btn-step" onclick="step(14,-1)">-</button><input type="range" min="0" max="180" value="5"  class="sl" id="s14" oninput="mv(14,this.value)"><button class="btn-step" onclick="step(14,1)">+</button><span class="av" id="v14">5&deg;</span></div>
 <div class="pnl"><div class="pt">Forward Kinematics — Foot Position</div><div class="fkr"><div class="fkv"><span>X: </span><b id="fx2">—</b> mm</div><div class="fkv"><span>Y: </span><b id="fy2">—</b> mm</div><div class="fkv"><span>Z: </span><b id="fz2">—</b> mm</div></div></div>
 <div class="pnl"><div class="pt">Inverse Kinematics — Target (mm)</div>
 <div class="ikr"><input class="iki" type="number" id="ix2" placeholder="X" value="50"><input class="iki" type="number" id="iy2" placeholder="Y" value="20"><input class="iki" type="number" id="iz2" placeholder="Z" value="-100"></div>
@@ -342,12 +344,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 <script>
 const L1=30, L2=60, L3=80;
 const D2R=Math.PI/180, R2D=180/Math.PI;
-const CH=[[0,1,2],[3,4,5],[10,11,14],[6,8,9]];
+const CH=[[0,1,15],[3,4,5],[10,11,14],[6,8,9]];
 const MIR=[1,-1,1,-1];
 
 const POSES=[
-  { name:'Initial',    icon:'⚙️', angles:[[45,80,160],[94,80,0],[94,56,10],[45,92,160]] },
-  { name:'Standing',   icon:'🦾', angles:[[45,25,115],[94,135,45],[94,111,55],[45,37,115]] },
+  { name:'Initial',    icon:'⚙️', angles:[[45,70,164],[94,80,25],[94,70,5],[45,92,160]] },
+  { name:'Standing',   icon:'🦾', angles:[[45,15,100],[94,140,70],[74,133,60],[34,35,120]] },
   { name:'Low Crouch', icon:'⬇️', angles:[[45,110,140],[94,110,40],[94,110,140],[45,110,140]] },
   { name:'Low Stand',  icon:'🔽', angles:[[45,50,130],[94,110,30],[94,86,40],[45,62,130]] },
   { name:'FL Leg Up',  icon:'↖️', angles:[[45,38,115],[94,125,35],[94,101,45],[45,80,160]] },
