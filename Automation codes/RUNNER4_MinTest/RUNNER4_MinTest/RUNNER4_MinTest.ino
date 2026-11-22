@@ -2,21 +2,17 @@
 // RUNNER4_MinTest v2.5 — All-in-One Minimal Diagnostic Dashboard
 //
 // Sections in one page:
-//   1. MOTION   — Walk / Closed-Loop Gyro Turns (90°, 180°, custom deg) / Step
-//   Turns
+//   1. MOTION   — Walk / Closed-Loop Gyro Turns (90°, 180°, custom deg) / Step Turns
 //   2. ARM      — Lift + Gripper (angle sliders, Open/Close/Up/Down/Pick/Place)
-//   3. LINE     — 9x TCRT5000 Pro Indication (Track position, Centroid, Error
-//   mm,
+//   3. LINE     — 9x TCRT5000 Pro Indication (Track position, Centroid, Error mm,
 //                 normalized bars with threshold, active yellow highlight)
 //                 + Full Calibration (5s Auto Sweep, Floor/Line Snapshots,
 //                   Live Threshold slider, Polarity toggle, NVS flash save)
-//                 + LINE FOLLOWING WALK (Closed-loop PD steering with inverted
-//                 sign
+//                 + LINE FOLLOWING WALK (Closed-loop PD steering with inverted sign
 //                   & optional sensor order swap)
 //   4. TOF      — 3x VL53L0X live distance (Front/Right/Left)
 //   5. GYRO     — MPU6050 live Yaw heading, Gz rate, Zero Yaw, I2C address
-//                 + Deadband drift suppression (eliminates rapid stationary
-//                 drift)
+//                 + Deadband drift suppression (eliminates rapid stationary drift)
 //                 + On-demand gyro bias calibration
 //
 // WiFi AP: RUNNER4-Test / runner4robot  →  http://192.168.4.1
@@ -35,31 +31,29 @@
 #include <Adafruit_PWMServoDriver.h>
 #include <Arduino.h>
 #include <Preferences.h>
-#include <VL53L0X.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <VL53L0X.h>
 #include <math.h>
 #include <string.h>
 
-// ─── Hardware constants
-// ───────────────────────────────────────────────────────
-#define I2C_SDA 11
-#define I2C_SCL 12
-#define I2C_HZ 400000
-#define SERVOMIN 150
-#define SERVOMAX 600
-#define SERVO_FREQ 50
-#define AP_SSID "RUNNER4-Test"
-#define AP_PASS "runner4robot"
+// ─── Hardware constants ───────────────────────────────────────────────────────
+#define I2C_SDA     11
+#define I2C_SCL     12
+#define I2C_HZ      400000
+#define SERVOMIN    150
+#define SERVOMAX    600
+#define SERVO_FREQ  50
+#define AP_SSID     "RUNNER4-Test"
+#define AP_PASS     "runner4robot"
 
 // ARM (direct LEDC, 50 Hz, 14-bit)
-#define ARM_LIFT_PIN 47
-#define ARM_GRIP_PIN 44
-#define ARM_LEDC_FREQ 50
-#define ARM_LEDC_RES 14
-#define ARM_US_TO_DUTY(us)                                                     \
-  ((uint32_t)(((float)(us) / 20000.0f) * ((1 << ARM_LEDC_RES) - 1)))
+#define ARM_LIFT_PIN   47
+#define ARM_GRIP_PIN   44
+#define ARM_LEDC_FREQ  50
+#define ARM_LEDC_RES   14
+#define ARM_US_TO_DUTY(us) ((uint32_t)(((float)(us)/20000.0f)*((1<<ARM_LEDC_RES)-1)))
 
 // Line array — ADC1 only (WiFi blocks ADC2 on ESP32-S3)
 #define LINE_N 9
@@ -68,20 +62,18 @@ const uint8_t LINE_PINS[LINE_N] = {1, 2, 4, 5, 6, 7, 8, 9, 10};
 // ToF XSHUT pins + runtime I2C addresses
 #define TOF_FRONT_XSHUT 13
 #define TOF_RIGHT_XSHUT 14
-#define TOF_LEFT_XSHUT 21
-#define TOF_FRONT_ADDR 0x30
-#define TOF_RIGHT_ADDR 0x31
-#define TOF_LEFT_ADDR 0x32
+#define TOF_LEFT_XSHUT  21
+#define TOF_FRONT_ADDR  0x30
+#define TOF_RIGHT_ADDR  0x31
+#define TOF_LEFT_ADDR   0x32
 
 // MPU6050 constants
-#define MPU_ADDR_DEF 0x68
-#define MPU_GYRO_SENS 65.5f // LSB per °/s at ±500°/s
-#define MPU_TOL_DEG 3.0f
-#define MPU_DEADBAND                                                           \
-  0.25f // °/s deadband threshold to eliminate stationary drift
+#define MPU_ADDR_DEF    0x68
+#define MPU_GYRO_SENS   65.5f   // LSB per °/s at ±500°/s
+#define MPU_TOL_DEG     3.0f
+#define MPU_DEADBAND    0.25f   // °/s deadband threshold to eliminate stationary drift
 
-// ─── Servo channel map
-// ────────────────────────────────────────────────────────
+// ─── Servo channel map ────────────────────────────────────────────────────────
 // legChannels[leg][0=hip, 1=femur, 2=tibia]; leg: 0=FL 1=FR 2=BL 3=BR
 const uint8_t CH[4][3] = {
     {0, 1, 15},   // FL
@@ -92,40 +84,39 @@ const uint8_t CH[4][3] = {
 
 // ─── Poses ───────────────────────────────────────────────────────────────────
 const int HOME_POSE[4][3] = {
-    {45, 60, 139}, {94, 80, 25}, {94, 70, 5}, {45, 80, 140}};
+    {45, 60, 139}, {94, 80, 25}, {94, 70, 5}, {45, 80, 140}
+};
 const int STAND_POSE[4][3] = {
-    {34, 2, 83}, {94, 135, 65}, {84, 125, 50}, {34, 15, 95}};
+    {34, 2, 83}, {94, 135, 65}, {84, 125, 50}, {34, 15, 95}
+};
 
-// ─── Gait tuning (changeable live from browser)
-// ───────────────────────────────
-int LIFT_ANGLE = 20;       // femur lift per phase for walking (degrees)
-int SWING_ANGLE = 15;      // hip swing per phase for walking (degrees)
-int SETTLE_MS = 140;       // ms to wait after each snapTo
-int TURN_LIFT_ANGLE = 15;  // reduced femur lift for turning (stability)
-int TURN_SWING_ANGLE = 10; // reduced hip swing for turning (stability)
+// ─── Gait tuning (changeable live from browser) ───────────────────────────────
+int LIFT_ANGLE       = 20;   // femur lift per phase for walking (degrees)
+int SWING_ANGLE      = 15;   // hip swing per phase for walking (degrees)
+int SETTLE_MS        = 140;  // ms to wait after each snapTo
+int TURN_LIFT_ANGLE  = 15;   // reduced femur lift for turning (stability)
+int TURN_SWING_ANGLE = 10;   // reduced hip swing for turning (stability)
 
-int STEPS_90 = 7;   // fallback steps per 90° turn
-int STEPS_180 = 14; // fallback steps per 180° turn
+int STEPS_90         = 7;    // fallback steps per 90° turn
+int STEPS_180        = 14;   // fallback steps per 180° turn
 
 // Gait signs
-const int PAIR[4] = {0, 1, 1, 0}; // FL+BR=0, FR+BL=1
-const int LIFT_SIGN[4] = {+1, -1, -1, +1};
-const int WALK_SIGN[4] = {-1, +1, -1, +1};
+const int PAIR[4]        = {0, 1, 1, 0};        // FL+BR=0, FR+BL=1
+const int LIFT_SIGN[4]   = {+1, -1, -1, +1};
+const int WALK_SIGN[4]   = {-1, +1, -1, +1};
 const int TURN_R_SIGN[4] = {-1, -1, -1, -1};
 const int TURN_L_SIGN[4] = {+1, +1, +1, +1};
 
-// ─── Arm defaults
-// ─────────────────────────────────────────────────────────────
-int armGripOpen = 89;
+// ─── Arm defaults ─────────────────────────────────────────────────────────────
+int armGripOpen  = 89;
 int armGripClose = 53;
-int armLiftUp = 75;
-int armLiftDown = 160;
-int armGripPos = 53; // current grip angle
-int armLiftPos = 75; // current lift angle
-int armSpeedMs = 12; // ms per degree during smooth arm moves
+int armLiftUp    = 75;
+int armLiftDown  = 160;
+int armGripPos   = 53;   // current grip angle
+int armLiftPos   = 75;   // current lift angle
+int armSpeedMs   = 12;   // ms per degree during smooth arm moves
 
-// ─── Global state
-// ─────────────────────────────────────────────────────────────
+// ─── Global state ─────────────────────────────────────────────────────────────
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 WebServer server(80);
 Preferences linePrefs;
@@ -135,737 +126,681 @@ char statusMsg[80] = "Idle — ready";
 
 // ToF sensor objects
 VL53L0X tofDev[3];
-bool tofOk[3] = {false, false, false};
-float tofDist[3] = {0, 0, 0}; // mm
+bool     tofOk[3]   = {false, false, false};
+float    tofDist[3] = {0, 0, 0};  // mm
 const uint8_t TOF_XSHUT[3] = {TOF_FRONT_XSHUT, TOF_RIGHT_XSHUT, TOF_LEFT_XSHUT};
-const uint8_t TOF_ADDR[3] = {TOF_FRONT_ADDR, TOF_RIGHT_ADDR, TOF_LEFT_ADDR};
-const char *TOF_NAME[3] = {"Front", "Right", "Left"};
-uint32_t tofLastMs = 0;
+const uint8_t TOF_ADDR[3]  = {TOF_FRONT_ADDR,  TOF_RIGHT_ADDR,  TOF_LEFT_ADDR};
+const char*   TOF_NAME[3]  = {"Front", "Right", "Left"};
+uint32_t      tofLastMs    = 0;
 
 // Line array state, calibration & indication
-uint16_t lineRaw[LINE_N] = {0};
-uint16_t lineMin[LINE_N] = {500, 500, 500, 500, 500, 500, 500, 500, 500};
-uint16_t lineMax[LINE_N] = {3200, 3200, 3200, 3200, 3200,
-                            3200, 3200, 3200, 3200};
-float lineNorm[LINE_N] = {0};
-float lineThr = 0.50f;
-float lineErrMm = 0.0f;
-float lineCentroid = 4.0f;
-uint8_t lineActCnt = 0;
-uint16_t lineMask = 0;
-bool lineFound = false;
-bool lineCalibrated = false;
-bool lineCalActive = false;
-uint32_t lineCalUntil = 0;
+uint16_t lineRaw[LINE_N]     = {0};
+uint16_t lineMin[LINE_N]     = {500, 500, 500, 500, 500, 500, 500, 500, 500};
+uint16_t lineMax[LINE_N]     = {3200, 3200, 3200, 3200, 3200, 3200, 3200, 3200, 3200};
+float    lineNorm[LINE_N]    = {0};
+float    lineThr             = 0.50f;
+float    lineErrMm           = 0.0f;
+float    lineCentroid        = 4.0f;
+uint8_t  lineActCnt          = 0;
+uint16_t lineMask            = 0;
+bool     lineFound           = false;
+bool     lineCalibrated      = false;
+bool     lineCalActive       = false;
+uint32_t lineCalUntil        = 0;
 uint16_t calSweepMin[LINE_N];
 uint16_t calSweepMax[LINE_N];
-bool lineWhiteHigh = true; // true: white line reads high; false: inverted
-char lineCalMsg[96] = "Not calibrated";
-uint32_t lineLastMs = 0;
+bool     lineWhiteHigh       = true;  // true: white line reads high; false: inverted
+char     lineCalMsg[96]      = "Not calibrated";
+uint32_t lineLastMs          = 0;
 
 // Line follow walk state
-volatile bool lfRunning = false;
-volatile bool lfStop = false;
-int lfStepsDone = 0;
-int lfTargetSteps = 0;
-float lfKp = 0.35f;
-float lfKd = 0.12f;
-int lfMaxCorr = 12;
-bool lfStopLost = true;
-int lfSteerSign = -1; // -1: inverted steering (corrects left/right inversion)
-bool lfSwapSens = false; // true: swap S1<->S9 sensor orientation
-char lfStatusStr[64] = "idle";
+volatile bool lfRunning    = false;
+volatile bool lfStop       = false;
+int           lfStepsDone  = 0;
+int           lfTargetSteps= 0;
+float         lfKp         = 0.35f;
+float         lfKd         = 0.12f;
+int           lfMaxCorr    = 12;
+bool          lfStopLost   = true;
+int           lfSteerSign  = -1;      // -1: inverted steering (corrects left/right inversion)
+bool          lfSwapSens   = false;   // true: swap S1<->S9 sensor orientation
+char          lfStatusStr[64] = "idle";
 
 // MPU6050 Gyro state
-bool mpuReady = false;
-bool mpuCalibrated = false;
-bool mpuStationary = true;
-uint8_t mpuAddr = MPU_ADDR_DEF;
-float mpuGBiasZ = 0.0f;
-float mpuYaw = 0.0f; // relative integrated heading
-float mpuGz = 0.0f;  // filtered turn rate (°/s)
-uint32_t mpuLastMs = 0;
+bool     mpuReady       = false;
+bool     mpuCalibrated  = false;
+bool     mpuStationary  = true;
+uint8_t  mpuAddr        = MPU_ADDR_DEF;
+float    mpuGBiasZ      = 0.0f;
+float    mpuYaw         = 0.0f;   // relative integrated heading
+float    mpuGz          = 0.0f;   // filtered turn rate (°/s)
+uint32_t mpuLastMs      = 0;
 
 // Gyro turn state
-volatile bool gyroTurnRunning = false;
-volatile bool gyroTurnStop = false;
-float gyroTurnTarget = 0.0f;
-float gyroTurnDone = 0.0f;
-char gyroTurnPhase[64] = "idle";
+volatile bool  gyroTurnRunning = false;
+volatile bool  gyroTurnStop    = false;
+float gyroTurnTarget  = 0.0f;
+float gyroTurnDone    = 0.0f;
+char  gyroTurnPhase[64] = "idle";
 
-// ─── LEDC arm helpers
-// ─────────────────────────────────────────────────────────
+// ─── LEDC arm helpers ─────────────────────────────────────────────────────────
 uint32_t armDegToDuty(int deg) {
-  deg = constrain(deg, 0, 180);
-  uint32_t us = (uint32_t)map(deg, 0, 180, 500, 2500);
-  return ARM_US_TO_DUTY(us);
+    deg = constrain(deg, 0, 180);
+    uint32_t us = (uint32_t)map(deg, 0, 180, 500, 2500);
+    return ARM_US_TO_DUTY(us);
 }
 
 void armInitLedc() {
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-  ledcAttach(ARM_LIFT_PIN, ARM_LEDC_FREQ, ARM_LEDC_RES);
-  ledcAttach(ARM_GRIP_PIN, ARM_LEDC_FREQ, ARM_LEDC_RES);
+    ledcAttach(ARM_LIFT_PIN, ARM_LEDC_FREQ, ARM_LEDC_RES);
+    ledcAttach(ARM_GRIP_PIN, ARM_LEDC_FREQ, ARM_LEDC_RES);
 #else
-  ledcSetup(6, ARM_LEDC_FREQ, ARM_LEDC_RES);
-  ledcAttachPin(ARM_LIFT_PIN, 6);
-  ledcSetup(7, ARM_LEDC_FREQ, ARM_LEDC_RES);
-  ledcAttachPin(ARM_GRIP_PIN, 7);
+    ledcSetup(6, ARM_LEDC_FREQ, ARM_LEDC_RES);
+    ledcAttachPin(ARM_LIFT_PIN, 6);
+    ledcSetup(7, ARM_LEDC_FREQ, ARM_LEDC_RES);
+    ledcAttachPin(ARM_GRIP_PIN, 7);
 #endif
 }
 
 void rawLift(int deg) {
-  deg = constrain(deg, 20, 160);
+    deg = constrain(deg, 20, 160);
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-  ledcWrite(ARM_LIFT_PIN, armDegToDuty(deg));
+    ledcWrite(ARM_LIFT_PIN, armDegToDuty(deg));
 #else
-  ledcWrite(6, armDegToDuty(deg));
+    ledcWrite(6, armDegToDuty(deg));
 #endif
-  armLiftPos = deg;
+    armLiftPos = deg;
 }
 
 void rawGrip(int deg) {
-  deg = constrain(deg, 0, 180);
+    deg = constrain(deg, 0, 180);
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-  ledcWrite(ARM_GRIP_PIN, armDegToDuty(deg));
+    ledcWrite(ARM_GRIP_PIN, armDegToDuty(deg));
 #else
-  ledcWrite(7, armDegToDuty(deg));
+    ledcWrite(7, armDegToDuty(deg));
 #endif
-  armGripPos = deg;
+    armGripPos = deg;
 }
 
 void sweepLift(int target) {
-  target = constrain(target, 20, 160);
-  int dir = (target > armLiftPos) ? 1 : -1;
-  while (armLiftPos != target) {
-    armLiftPos += dir;
-    rawLift(armLiftPos);
-    delay(armSpeedMs);
-  }
+    target = constrain(target, 20, 160);
+    int dir = (target > armLiftPos) ? 1 : -1;
+    while (armLiftPos != target) {
+        armLiftPos += dir;
+        rawLift(armLiftPos);
+        delay(armSpeedMs);
+    }
 }
 
 void sweepGrip(int target) {
-  target = constrain(target, 0, 180);
-  int dir = (target > armGripPos) ? 1 : -1;
-  while (armGripPos != target) {
-    armGripPos += dir;
-    rawGrip(armGripPos);
-    delay(armSpeedMs);
-  }
+    target = constrain(target, 0, 180);
+    int dir = (target > armGripPos) ? 1 : -1;
+    while (armGripPos != target) {
+        armGripPos += dir;
+        rawGrip(armGripPos);
+        delay(armSpeedMs);
+    }
 }
 
-// ─── ToF init & poll
-// ──────────────────────────────────────────────────────────
+// ─── ToF init & poll ──────────────────────────────────────────────────────────
 void tofInit() {
-  for (int i = 0; i < 3; i++) {
-    pinMode(TOF_XSHUT[i], OUTPUT);
-    digitalWrite(TOF_XSHUT[i], LOW);
-  }
-  delay(20);
-
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(TOF_XSHUT[i], HIGH);
-    delay(15);
-    tofDev[i].setTimeout(300);
-    if (tofDev[i].init()) {
-      tofDev[i].setAddress(TOF_ADDR[i]);
-      tofDev[i].setMeasurementTimingBudget(33000);
-      tofDev[i].startContinuous();
-      tofOk[i] = true;
-      Serial.printf("[TOF] %s OK -> 0x%02X\n", TOF_NAME[i], TOF_ADDR[i]);
-    } else {
-      tofOk[i] = false;
-      Serial.printf("[TOF] %s NOT FOUND\n", TOF_NAME[i]);
+    for (int i = 0; i < 3; i++) {
+        pinMode(TOF_XSHUT[i], OUTPUT);
+        digitalWrite(TOF_XSHUT[i], LOW);
     }
-  }
+    delay(20);
+
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(TOF_XSHUT[i], HIGH);
+        delay(15);
+        tofDev[i].setTimeout(300);
+        if (tofDev[i].init()) {
+            tofDev[i].setAddress(TOF_ADDR[i]);
+            tofDev[i].setMeasurementTimingBudget(33000);
+            tofDev[i].startContinuous();
+            tofOk[i] = true;
+            Serial.printf("[TOF] %s OK -> 0x%02X\n", TOF_NAME[i], TOF_ADDR[i]);
+        } else {
+            tofOk[i] = false;
+            Serial.printf("[TOF] %s NOT FOUND\n", TOF_NAME[i]);
+        }
+    }
 }
 
 void tofPoll() {
-  if (millis() - tofLastMs < 50)
-    return;
-  tofLastMs = millis();
-  for (int i = 0; i < 3; i++) {
-    if (!tofOk[i])
-      continue;
-    uint16_t mm = tofDev[i].readRangeContinuousMillimeters();
-    if (!tofDev[i].timeoutOccurred() && mm < 2000)
-      tofDist[i] = (float)mm;
-  }
+    if (millis() - tofLastMs < 50) return;
+    tofLastMs = millis();
+    for (int i = 0; i < 3; i++) {
+        if (!tofOk[i]) continue;
+        uint16_t mm = tofDev[i].readRangeContinuousMillimeters();
+        if (!tofDev[i].timeoutOccurred() && mm < 2000)
+            tofDist[i] = (float)mm;
+    }
 }
 
-// ─── Line array calibration persistent storage
-// ────────────────────────────────
+// ─── Line array calibration persistent storage ────────────────────────────────
 void lineSaveConfig() {
-  linePrefs.begin("run4line", false);
-  linePrefs.putBytes("min", lineMin, sizeof(lineMin));
-  linePrefs.putBytes("max", lineMax, sizeof(lineMax));
-  linePrefs.putFloat("thr", lineThr);
-  linePrefs.putBool("wh", lineWhiteHigh);
-  linePrefs.putBool("cal", lineCalibrated);
-  linePrefs.putInt("sinv", lfSteerSign);
-  linePrefs.putBool("swap", lfSwapSens);
-  linePrefs.end();
-  Serial.println("[LINE-CAL] Saved to NVS flash");
+    linePrefs.begin("run4line", false);
+    linePrefs.putBytes("min", lineMin, sizeof(lineMin));
+    linePrefs.putBytes("max", lineMax, sizeof(lineMax));
+    linePrefs.putFloat("thr", lineThr);
+    linePrefs.putBool("wh", lineWhiteHigh);
+    linePrefs.putBool("cal", lineCalibrated);
+    linePrefs.putInt("sinv", lfSteerSign);
+    linePrefs.putBool("swap", lfSwapSens);
+    linePrefs.end();
+    Serial.println("[LINE-CAL] Saved to NVS flash");
 }
 
 void lineLoadConfig() {
-  linePrefs.begin("run4line", true);
-  if (linePrefs.isKey("cal")) {
-    linePrefs.getBytes("min", lineMin, sizeof(lineMin));
-    linePrefs.getBytes("max", lineMax, sizeof(lineMax));
-    lineThr = linePrefs.getFloat("thr", 0.50f);
-    lineWhiteHigh = linePrefs.getBool("wh", true);
-    lineCalibrated = linePrefs.getBool("cal", false);
-    lfSteerSign = linePrefs.getInt("sinv", -1);
-    lfSwapSens = linePrefs.getBool("swap", false);
-    snprintf(lineCalMsg, sizeof(lineCalMsg),
-             lineCalibrated ? "Calibrated from Flash" : "Loaded uncalibrated");
-    Serial.printf(
-        "[LINE-CAL] Loaded from flash: thr=%.2f wh=%d cal=%d sinv=%d swap=%d\n",
-        lineThr, lineWhiteHigh, lineCalibrated, lfSteerSign, lfSwapSens);
-  } else {
-    Serial.println("[LINE-CAL] No saved config found, using defaults");
-  }
-  linePrefs.end();
+    linePrefs.begin("run4line", true);
+    if (linePrefs.isKey("cal")) {
+        linePrefs.getBytes("min", lineMin, sizeof(lineMin));
+        linePrefs.getBytes("max", lineMax, sizeof(lineMax));
+        lineThr = linePrefs.getFloat("thr", 0.50f);
+        lineWhiteHigh = linePrefs.getBool("wh", true);
+        lineCalibrated = linePrefs.getBool("cal", false);
+        lfSteerSign = linePrefs.getInt("sinv", -1);
+        lfSwapSens  = linePrefs.getBool("swap", false);
+        snprintf(lineCalMsg, sizeof(lineCalMsg), lineCalibrated ? "Calibrated from Flash" : "Loaded uncalibrated");
+        Serial.printf("[LINE-CAL] Loaded from flash: thr=%.2f wh=%d cal=%d sinv=%d swap=%d\n",
+                      lineThr, lineWhiteHigh, lineCalibrated, lfSteerSign, lfSwapSens);
+    } else {
+        Serial.println("[LINE-CAL] No saved config found, using defaults");
+    }
+    linePrefs.end();
 }
 
 void lineStartCal(uint32_t durationMs = 5000) {
-  for (int i = 0; i < LINE_N; i++) {
-    calSweepMin[i] = 4095;
-    calSweepMax[i] = 0;
-  }
-  lineCalActive = true;
-  lineCalUntil = millis() + durationMs;
-  snprintf(lineCalMsg, sizeof(lineCalMsg),
-           "Sweeping... slide sensor over line & floor");
-  Serial.println("[LINE-CAL] 5-second calibration sweep started");
+    for (int i = 0; i < LINE_N; i++) {
+        calSweepMin[i] = 4095;
+        calSweepMax[i] = 0;
+    }
+    lineCalActive = true;
+    lineCalUntil = millis() + durationMs;
+    snprintf(lineCalMsg, sizeof(lineCalMsg), "Sweeping... slide sensor over line & floor");
+    Serial.println("[LINE-CAL] 5-second calibration sweep started");
 }
 
 void lineFinishCal() {
-  lineCalActive = false;
-  uint8_t okCount = 0;
-  for (int i = 0; i < LINE_N; i++) {
-    if (calSweepMax[i] > calSweepMin[i] + 60) {
-      lineMin[i] = calSweepMin[i];
-      lineMax[i] = calSweepMax[i];
-      okCount++;
-    }
-  }
-  if (okCount >= LINE_N - 2) {
-    lineCalibrated = true;
-    snprintf(lineCalMsg, sizeof(lineCalMsg), "Calibrated OK (%d/9 sensors)",
-             okCount);
-    Serial.printf("[LINE-CAL] %s\n", lineCalMsg);
-    lineSaveConfig();
-  } else {
-    snprintf(lineCalMsg, sizeof(lineCalMsg),
-             "Cal FAILED: only %d/9 sensors saw contrast (min span 60)",
-             okCount);
-    Serial.printf("[LINE-CAL] %s\n", lineCalMsg);
-  }
-}
-
-// ─── Line array poll & centroid calculation
-// ───────────────────────────────────
-void linePoll() {
-  if (millis() - lineLastMs < 20)
-    return;
-  lineLastMs = millis();
-  uint32_t now = millis();
-
-  // 1. If calibration sweep active: capture min and max
-  if (lineCalActive) {
+    lineCalActive = false;
+    uint8_t okCount = 0;
     for (int i = 0; i < LINE_N; i++) {
-      uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
-      lineRaw[i] = v;
-      if (v < calSweepMin[i])
-        calSweepMin[i] = v;
-      if (v > calSweepMax[i])
-        calSweepMax[i] = v;
+        if (calSweepMax[i] > calSweepMin[i] + 60) {
+            lineMin[i] = calSweepMin[i];
+            lineMax[i] = calSweepMax[i];
+            okCount++;
+        }
     }
-    if (now >= lineCalUntil) {
-      lineFinishCal();
+    if (okCount >= LINE_N - 2) {
+        lineCalibrated = true;
+        snprintf(lineCalMsg, sizeof(lineCalMsg), "Calibrated OK (%d/9 sensors)", okCount);
+        Serial.printf("[LINE-CAL] %s\n", lineCalMsg);
+        lineSaveConfig();
+    } else {
+        snprintf(lineCalMsg, sizeof(lineCalMsg), "Cal FAILED: only %d/9 sensors saw contrast (min span 60)", okCount);
+        Serial.printf("[LINE-CAL] %s\n", lineCalMsg);
     }
-    return;
-  }
-
-  // 2. Normal sensing
-  lineActCnt = 0;
-  lineMask = 0;
-  float sumW = 0.0f;
-  float sumWN = 0.0f;
-
-  for (int i = 0; i < LINE_N; i++) {
-    uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
-    lineRaw[i] = v;
-
-    uint16_t minV = lineMin[i];
-    uint16_t maxV = lineMax[i];
-    uint16_t span = (maxV > minV) ? (maxV - minV) : 1;
-    if (span < 50)
-      span = 50;
-
-    float n = (float)(v - minV) / (float)span;
-    n = constrain(n, 0.0f, 1.0f);
-    if (!lineWhiteHigh)
-      n = 1.0f - n; // invert if white reads low ADC
-    lineNorm[i] = n;
-
-    if (n >= lineThr) {
-      lineActCnt++;
-      lineMask |= (1 << i);
-      float w = n - lineThr;
-      sumW += w;
-      sumWN += w * (float)i;
-    }
-  }
-
-  if (sumW > 0.001f) {
-    lineCentroid = sumWN / sumW;
-    lineErrMm =
-        (lineCentroid - 4.0f) * 10.0f; // 10 mm spacing, 4.0 is center (S5)
-    lineFound = true;
-  } else {
-    lineFound = false;
-  }
 }
 
-// ─── MPU6050 Driver with Deadband & Anti-Drift
-// ────────────────────────────────
+// ─── Line array poll & centroid calculation ───────────────────────────────────
+void linePoll() {
+    if (millis() - lineLastMs < 20) return;
+    lineLastMs = millis();
+    uint32_t now = millis();
+
+    // 1. If calibration sweep active: capture min and max
+    if (lineCalActive) {
+        for (int i = 0; i < LINE_N; i++) {
+            uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
+            lineRaw[i] = v;
+            if (v < calSweepMin[i]) calSweepMin[i] = v;
+            if (v > calSweepMax[i]) calSweepMax[i] = v;
+        }
+        if (now >= lineCalUntil) {
+            lineFinishCal();
+        }
+        return;
+    }
+
+    // 2. Normal sensing
+    lineActCnt = 0;
+    lineMask = 0;
+    float sumW = 0.0f;
+    float sumWN = 0.0f;
+
+    for (int i = 0; i < LINE_N; i++) {
+        uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
+        lineRaw[i] = v;
+
+        uint16_t minV = lineMin[i];
+        uint16_t maxV = lineMax[i];
+        uint16_t span = (maxV > minV) ? (maxV - minV) : 1;
+        if (span < 50) span = 50;
+
+        float n = (float)(v - minV) / (float)span;
+        n = constrain(n, 0.0f, 1.0f);
+        if (!lineWhiteHigh) n = 1.0f - n; // invert if white reads low ADC
+        lineNorm[i] = n;
+
+        if (n >= lineThr) {
+            lineActCnt++;
+            lineMask |= (1 << i);
+            float w = n - lineThr;
+            sumW += w;
+            sumWN += w * (float)i;
+        }
+    }
+
+    if (sumW > 0.001f) {
+        lineCentroid = sumWN / sumW;
+        lineErrMm = (lineCentroid - 4.0f) * 10.0f; // 10 mm spacing, 4.0 is center (S5)
+        lineFound = true;
+    } else {
+        lineFound = false;
+    }
+}
+
+// ─── MPU6050 Driver with Deadband & Anti-Drift ────────────────────────────────
 bool mpuWriteReg(uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(mpuAddr);
-  Wire.write(reg);
-  Wire.write(val);
-  return (Wire.endTransmission() == 0);
+    Wire.beginTransmission(mpuAddr);
+    Wire.write(reg);
+    Wire.write(val);
+    return (Wire.endTransmission() == 0);
 }
 
 bool mpuReadGz(int16_t &rawGz) {
-  Wire.beginTransmission(mpuAddr);
-  Wire.write(0x47); // GYRO_ZOUT_H
-  if (Wire.endTransmission(false) != 0) {
     Wire.beginTransmission(mpuAddr);
-    Wire.write(0x47);
-    if (Wire.endTransmission(true) != 0)
-      return false;
-  }
-  if (Wire.requestFrom((uint8_t)mpuAddr, (uint8_t)2) < 2)
-    return false;
-  rawGz = (int16_t)((Wire.read() << 8) | Wire.read());
-  return true;
+    Wire.write(0x47); // GYRO_ZOUT_H
+    if (Wire.endTransmission(false) != 0) {
+        Wire.beginTransmission(mpuAddr);
+        Wire.write(0x47);
+        if (Wire.endTransmission(true) != 0) return false;
+    }
+    if (Wire.requestFrom((uint8_t)mpuAddr, (uint8_t)2) < 2) return false;
+    rawGz = (int16_t)((Wire.read() << 8) | Wire.read());
+    return true;
 }
 
 void mpuCalibrate(uint16_t samples = 400) {
-  Serial.println("[MPU] Calibrating gyro bias... keep robot still!");
-  int16_t dummy;
-  // Discard initial warmup readings so DLPF settles
-  for (int i = 0; i < 40; i++) {
-    mpuReadGz(dummy);
-    delay(4);
-  }
-
-  int64_t sumZ = 0;
-  int valid = 0;
-  for (uint16_t i = 0; i < samples; i++) {
-    int16_t gz;
-    if (mpuReadGz(gz)) {
-      sumZ += gz;
-      valid++;
+    Serial.println("[MPU] Calibrating gyro bias... keep robot still!");
+    int16_t dummy;
+    // Discard initial warmup readings so DLPF settles
+    for (int i = 0; i < 40; i++) {
+        mpuReadGz(dummy);
+        delay(4);
     }
-    delay(4);
-  }
 
-  if (valid > 80) {
-    mpuGBiasZ = (float)sumZ / (float)valid;
-    mpuCalibrated = true;
-    mpuReady = true;
-    mpuGz = 0.0f;
-    mpuYaw = 0.0f;
-    Serial.printf("[MPU] Calibrated: gBiasZ=%.2f (%d valid samples)\n",
-                  mpuGBiasZ, valid);
-  } else {
-    Serial.println("[MPU] Calibration FAILED — check wiring");
-  }
+    int64_t sumZ = 0;
+    int valid = 0;
+    for (uint16_t i = 0; i < samples; i++) {
+        int16_t gz;
+        if (mpuReadGz(gz)) {
+            sumZ += gz;
+            valid++;
+        }
+        delay(4);
+    }
+
+    if (valid > 80) {
+        mpuGBiasZ = (float)sumZ / (float)valid;
+        mpuCalibrated = true;
+        mpuReady = true;
+        mpuGz = 0.0f;
+        mpuYaw = 0.0f;
+        Serial.printf("[MPU] Calibrated: gBiasZ=%.2f (%d valid samples)\n", mpuGBiasZ, valid);
+    } else {
+        Serial.println("[MPU] Calibration FAILED — check wiring");
+    }
 }
 
 void mpuInit() {
-  uint8_t addrs[2] = {0x68, 0x69};
-  bool found = false;
-  for (uint8_t a : addrs) {
-    Wire.beginTransmission(a);
-    if (Wire.endTransmission() == 0) {
-      mpuAddr = a;
-      found = true;
-      break;
+    uint8_t addrs[2] = {0x68, 0x69};
+    bool found = false;
+    for (uint8_t a : addrs) {
+        Wire.beginTransmission(a);
+        if (Wire.endTransmission() == 0) {
+            mpuAddr = a;
+            found = true;
+            break;
+        }
     }
-  }
-  if (!found) {
-    Serial.println("[MPU] NOT FOUND at 0x68 or 0x69");
-    mpuReady = false;
-    return;
-  }
-  Serial.printf("[MPU] Found at 0x%02X — initializing...\n", mpuAddr);
+    if (!found) {
+        Serial.println("[MPU] NOT FOUND at 0x68 or 0x69");
+        mpuReady = false;
+        return;
+    }
+    Serial.printf("[MPU] Found at 0x%02X — initializing...\n", mpuAddr);
 
-  // Reset device
-  mpuWriteReg(0x6B, 0x80);
-  delay(50);
-  // Wake & select PLL with X gyro clock
-  mpuWriteReg(0x6B, 0x01);
-  delay(50);
-  // Enable all axes
-  mpuWriteReg(0x6C, 0x00);
-  delay(10);
-  // Sample rate divider 1000 / (1 + 9) = 100 Hz
-  mpuWriteReg(0x19, 0x09);
-  // DLPF ~44 Hz bandwidth
-  mpuWriteReg(0x1A, 0x03);
-  // ±500 °/s
-  mpuWriteReg(0x1B, 0x08);
-  // ±2g
-  mpuWriteReg(0x1C, 0x00);
-  delay(50);
+    // Reset device
+    mpuWriteReg(0x6B, 0x80);
+    delay(50);
+    // Wake & select PLL with X gyro clock
+    mpuWriteReg(0x6B, 0x01);
+    delay(50);
+    // Enable all axes
+    mpuWriteReg(0x6C, 0x00);
+    delay(10);
+    // Sample rate divider 1000 / (1 + 9) = 100 Hz
+    mpuWriteReg(0x19, 0x09);
+    // DLPF ~44 Hz bandwidth
+    mpuWriteReg(0x1A, 0x03);
+    // ±500 °/s
+    mpuWriteReg(0x1B, 0x08);
+    // ±2g
+    mpuWriteReg(0x1C, 0x00);
+    delay(50);
 
-  // Calibrate gyro bias while resting still
-  mpuCalibrate(350);
+    // Calibrate gyro bias while resting still
+    mpuCalibrate(350);
 }
 
 void mpuPoll() {
-  if (!mpuReady)
-    return;
-  uint32_t now = millis();
-  if (now - mpuLastMs < 10)
-    return; // 100 Hz
-  float dt = (now - mpuLastMs) / 1000.0f;
-  if (dt > 0.1f)
-    dt = 0.1f;
-  mpuLastMs = now;
+    if (!mpuReady) return;
+    uint32_t now = millis();
+    if (now - mpuLastMs < 10) return; // 100 Hz
+    float dt = (now - mpuLastMs) / 1000.0f;
+    if (dt > 0.1f) dt = 0.1f;
+    mpuLastMs = now;
 
-  int16_t raw;
-  if (!mpuReadGz(raw))
-    return;
+    int16_t raw;
+    if (!mpuReadGz(raw)) return;
 
-  float curGz = ((float)raw - mpuGBiasZ) / MPU_GYRO_SENS;
+    float curGz = ((float)raw - mpuGBiasZ) / MPU_GYRO_SENS;
 
-  // Stationary slow drift correction (only when robot is declared stationary)
-  if (mpuStationary && fabsf(curGz) < 2.0f) {
-    float alpha = dt / 2.0f;
-    if (alpha > 0.01f)
-      alpha = 0.01f;
-    mpuGBiasZ = (1.0f - alpha) * mpuGBiasZ + alpha * (float)raw;
-  }
+    // Stationary slow drift correction (only when robot is declared stationary)
+    if (mpuStationary && fabsf(curGz) < 2.0f) {
+        float alpha = dt / 2.0f;
+        if (alpha > 0.01f) alpha = 0.01f;
+        mpuGBiasZ = (1.0f - alpha) * mpuGBiasZ + alpha * (float)raw;
+    }
 
-  // DEADBAND: If rate is below threshold, force to exactly 0 to eliminate drift
-  if (fabsf(curGz) < MPU_DEADBAND) {
-    curGz = 0.0f;
-  }
+    // DEADBAND: If rate is below threshold, force to exactly 0 to eliminate drift
+    if (fabsf(curGz) < MPU_DEADBAND) {
+        curGz = 0.0f;
+    }
 
-  // EMA filter
-  mpuGz = 0.80f * mpuGz + 0.20f * curGz;
-  if (fabsf(mpuGz) < 0.15f) {
-    mpuGz = 0.0f;
-  }
+    // EMA filter
+    mpuGz = 0.80f * mpuGz + 0.20f * curGz;
+    if (fabsf(mpuGz) < 0.15f) {
+        mpuGz = 0.0f;
+    }
 
-  // Integrate yaw: CW turn is negative, CCW turn is positive
-  mpuYaw += mpuGz * dt;
+    // Integrate yaw: CW turn is negative, CCW turn is positive
+    mpuYaw += mpuGz * dt;
 }
 
-// ─── Servo helpers
-// ────────────────────────────────────────────────────────────
+// ─── Servo helpers ────────────────────────────────────────────────────────────
 void setServo(uint8_t ch, int angle) {
-  angle = constrain(angle, 0, 180);
-  pwm.setPWM(ch, 0, map(angle, 0, 180, SERVOMIN, SERVOMAX));
+    angle = constrain(angle, 0, 180);
+    pwm.setPWM(ch, 0, map(angle, 0, 180, SERVOMIN, SERVOMAX));
 }
 
 void applyPose(const int pose[4][3]) {
-  for (int l = 0; l < 4; l++)
-    for (int j = 0; j < 3; j++) {
-      setServo(CH[l][j], pose[l][j]);
-      curAngle[l][j] = pose[l][j];
-      delay(8);
-    }
+    for (int l = 0; l < 4; l++)
+        for (int j = 0; j < 3; j++) {
+            setServo(CH[l][j], pose[l][j]);
+            curAngle[l][j] = pose[l][j];
+            delay(8);
+        }
 }
 
 void snapTo(const int tgt[4][3], int settleMs) {
-  for (int l = 0; l < 4; l++)
-    for (int j = 0; j < 3; j++)
-      if (tgt[l][j] != curAngle[l][j]) {
-        setServo(CH[l][j], tgt[l][j]);
-        curAngle[l][j] = tgt[l][j];
-      }
-  // Poll server, ToF, Line, and Gyro during settle so readings stay live
-  uint32_t t0 = millis();
-  while (millis() - t0 < (uint32_t)settleMs) {
-    server.handleClient();
-    tofPoll();
-    linePoll();
-    mpuPoll();
-    delay(2);
-  }
+    for (int l = 0; l < 4; l++)
+        for (int j = 0; j < 3; j++)
+            if (tgt[l][j] != curAngle[l][j]) {
+                setServo(CH[l][j], tgt[l][j]);
+                curAngle[l][j] = tgt[l][j];
+            }
+    // Poll server, ToF, Line, and Gyro during settle so readings stay live
+    uint32_t t0 = millis();
+    while (millis() - t0 < (uint32_t)settleMs) {
+        server.handleClient();
+        tofPoll();
+        linePoll();
+        mpuPoll();
+        delay(2);
+    }
 }
 
 void moveSmooth(const int tgt[4][3], int steps, int stepMs) {
-  int start[4][3];
-  memcpy(start, curAngle, sizeof(start));
-  for (int s = 1; s <= steps; s++) {
-    float t = (float)s / steps;
-    t = t * t * (3.0f - 2.0f * t);
-    for (int l = 0; l < 4; l++)
-      for (int j = 0; j < 3; j++) {
-        int a = start[l][j] + (int)roundf(t * (tgt[l][j] - start[l][j]));
-        setServo(CH[l][j], a);
-        curAngle[l][j] = a;
-      }
-    delay(stepMs);
-    mpuPoll();
-  }
+    int start[4][3];
+    memcpy(start, curAngle, sizeof(start));
+    for (int s = 1; s <= steps; s++) {
+        float t = (float)s / steps;
+        t = t * t * (3.0f - 2.0f * t);
+        for (int l = 0; l < 4; l++)
+            for (int j = 0; j < 3; j++) {
+                int a = start[l][j] + (int)roundf(t * (tgt[l][j] - start[l][j]));
+                setServo(CH[l][j], a);
+                curAngle[l][j] = a;
+            }
+        delay(stepMs);
+        mpuPoll();
+    }
 }
 
-// ─── Core gait
-// ────────────────────────────────────────────────────────────────
+// ─── Core gait ────────────────────────────────────────────────────────────────
 void gaitWith(const int signs[4], int numSteps) {
-  int tgt[4][3];
-  for (int s = 0; s < numSteps; s++) {
-    int pair = s % 2;
-    memcpy(tgt, curAngle, sizeof(tgt));
-    for (int l = 0; l < 4; l++) {
-      if (PAIR[l] == pair) {
-        tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * LIFT_ANGLE;
-        tgt[l][0] = STAND_POSE[l][0] + signs[l] * SWING_ANGLE;
-      } else {
-        tgt[l][0] = STAND_POSE[l][0];
-      }
+    int tgt[4][3];
+    for (int s = 0; s < numSteps; s++) {
+        int pair = s % 2;
+        memcpy(tgt, curAngle, sizeof(tgt));
+        for (int l = 0; l < 4; l++) {
+            if (PAIR[l] == pair) {
+                tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * LIFT_ANGLE;
+                tgt[l][0] = STAND_POSE[l][0] + signs[l] * SWING_ANGLE;
+            } else {
+                tgt[l][0] = STAND_POSE[l][0];
+            }
+        }
+        snapTo(tgt, SETTLE_MS);
+        for (int l = 0; l < 4; l++)
+            if (PAIR[l] == pair) tgt[l][1] = STAND_POSE[l][1];
+        snapTo(tgt, SETTLE_MS);
     }
+    // Return all hips to standing
+    memcpy(tgt, curAngle, sizeof(tgt));
+    for (int l = 0; l < 4; l++) tgt[l][0] = STAND_POSE[l][0];
     snapTo(tgt, SETTLE_MS);
-    for (int l = 0; l < 4; l++)
-      if (PAIR[l] == pair)
-        tgt[l][1] = STAND_POSE[l][1];
-    snapTo(tgt, SETTLE_MS);
-  }
-  // Return all hips to standing
-  memcpy(tgt, curAngle, sizeof(tgt));
-  for (int l = 0; l < 4; l++)
-    tgt[l][0] = STAND_POSE[l][0];
-  snapTo(tgt, SETTLE_MS);
 }
 
 // ─── Closed-Loop Gyro Turn ───────────────────────────────────────────────────
 void gyroTurnWith(const int signs[4], float targetDeg) {
-  // 1. Ensure Gyro is initialized / active
-  if (!mpuReady) {
-    Serial.println("[GYRO-TURN] MPU not ready! Initializing...");
-    mpuInit();
-  }
-  if (!mpuReady) {
-    Serial.println("[GYRO-TURN] MPU offline! Falling back to step count.");
-    int estSteps = constrain((int)roundf(targetDeg / 12.0f), 1, 30);
-    gaitWith(signs, estSteps);
-    return;
-  }
+    // 1. Ensure Gyro is initialized / active
+    if (!mpuReady) {
+        Serial.println("[GYRO-TURN] MPU not ready! Initializing...");
+        mpuInit();
+    }
+    if (!mpuReady) {
+        Serial.println("[GYRO-TURN] MPU offline! Falling back to step count.");
+        int estSteps = constrain((int)roundf(targetDeg / 12.0f), 1, 30);
+        gaitWith(signs, estSteps);
+        return;
+    }
 
-  gyroTurnRunning = true;
-  gyroTurnStop = false;
-  gyroTurnTarget = targetDeg;
-  gyroTurnDone = 0.0f;
-  mpuStationary = false;
+    gyroTurnRunning = true;
+    gyroTurnStop    = false;
+    gyroTurnTarget  = targetDeg;
+    gyroTurnDone    = 0.0f;
+    mpuStationary   = false;
 
-  // 2. Settle and explicitly ZERO gyro yaw heading at start
-  uint32_t tSettle = millis();
-  while (millis() - tSettle < 60) {
-    server.handleClient();
-    mpuPoll();
-    delay(2);
-  }
-  mpuYaw = 0.0f; // clean zero start
+    // 2. Settle and explicitly ZERO gyro yaw heading at start
+    uint32_t tSettle = millis();
+    while (millis() - tSettle < 60) {
+        server.handleClient();
+        mpuPoll();
+        delay(2);
+    }
+    mpuYaw = 0.0f; // clean zero start
 
-  bool rightTurn = (signs[0] < 0);
-  const float tol = MPU_TOL_DEG;
-  int tgt[4][3];
-  int stepIdx = 0;
-  uint32_t tStart = millis();
+    bool rightTurn = (signs[0] < 0);
+    const float tol = MPU_TOL_DEG;
+    int tgt[4][3];
+    int stepIdx = 0;
+    uint32_t tStart = millis();
 
-  Serial.printf("[GYRO-TURN] Heading zeroed (yaw=0.0°). Target=%.1f° (%s)\n",
-                targetDeg, rightTurn ? "Right" : "Left");
+    Serial.printf("[GYRO-TURN] Heading zeroed (yaw=0.0°). Target=%.1f° (%s)\n",
+                  targetDeg, rightTurn ? "Right" : "Left");
 
-  while (!gyroTurnStop) {
-    int pair = stepIdx % 2;
+    while (!gyroTurnStop) {
+        int pair = stepIdx % 2;
 
-    // Phase A: lift swingPair and swing hips
+        // Phase A: lift swingPair and swing hips
+        memcpy(tgt, curAngle, sizeof(tgt));
+        for (int l = 0; l < 4; l++) {
+            if (PAIR[l] == pair) {
+                tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * TURN_LIFT_ANGLE;
+                tgt[l][0] = STAND_POSE[l][0] + signs[l] * TURN_SWING_ANGLE;
+            } else {
+                tgt[l][0] = STAND_POSE[l][0];
+            }
+        }
+        snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "S%d Ph-A (%.1f/%.0f°)", stepIdx + 1, gyroTurnDone, targetDeg);
+        snapTo(tgt, SETTLE_MS);
+        if (gyroTurnStop) break;
+
+        // Phase B: lower swingPair back to standing (all 4 feet planted)
+        for (int l = 0; l < 4; l++) {
+            if (PAIR[l] == pair) tgt[l][1] = STAND_POSE[l][1];
+        }
+        snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "S%d Ph-B (%.1f/%.0f°)", stepIdx + 1, gyroTurnDone, targetDeg);
+        snapTo(tgt, SETTLE_MS);
+
+        // Measure turned angle (mpuYaw was zeroed at start)
+        // Right turn: mpuYaw decreases into negative -> turned is -mpuYaw
+        // Left turn:  mpuYaw increases into positive -> turned is +mpuYaw
+        float currentYaw = mpuYaw;
+        float turned = rightTurn ? -currentYaw : currentYaw;
+        if (turned < 0.0f) turned = 0.0f;
+        gyroTurnDone = turned;
+        Serial.printf("[GYRO-TURN] Step %d done: turned=%.1f° / %.1f° (yaw=%.1f°)\n",
+                      stepIdx + 1, turned, targetDeg, currentYaw);
+
+        if (turned >= targetDeg - tol) {
+            Serial.printf("[GYRO-TURN] Target reached: turned=%.1f° (target=%.1f°)\n", turned, targetDeg);
+            break;
+        }
+
+        if (millis() - tStart > 60000) {
+            Serial.println("[GYRO-TURN] 60s timeout reached");
+            break;
+        }
+
+        stepIdx++;
+    }
+
+    // Return all hips to standing
     memcpy(tgt, curAngle, sizeof(tgt));
-    for (int l = 0; l < 4; l++) {
-      if (PAIR[l] == pair) {
-        tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * TURN_LIFT_ANGLE;
-        tgt[l][0] = STAND_POSE[l][0] + signs[l] * TURN_SWING_ANGLE;
-      } else {
-        tgt[l][0] = STAND_POSE[l][0];
-      }
-    }
-    snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "S%d Ph-A (%.1f/%.0f°)",
-             stepIdx + 1, gyroTurnDone, targetDeg);
-    snapTo(tgt, SETTLE_MS);
-    if (gyroTurnStop)
-      break;
-
-    // Phase B: lower swingPair back to standing (all 4 feet planted)
-    for (int l = 0; l < 4; l++) {
-      if (PAIR[l] == pair)
-        tgt[l][1] = STAND_POSE[l][1];
-    }
-    snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "S%d Ph-B (%.1f/%.0f°)",
-             stepIdx + 1, gyroTurnDone, targetDeg);
+    for (int l = 0; l < 4; l++) tgt[l][0] = STAND_POSE[l][0];
     snapTo(tgt, SETTLE_MS);
 
-    // Measure turned angle (mpuYaw was zeroed at start)
-    // Right turn: mpuYaw decreases into negative -> turned is -mpuYaw
-    // Left turn:  mpuYaw increases into positive -> turned is +mpuYaw
-    float currentYaw = mpuYaw;
-    float turned = rightTurn ? -currentYaw : currentYaw;
-    if (turned < 0.0f)
-      turned = 0.0f;
-    gyroTurnDone = turned;
-    Serial.printf(
-        "[GYRO-TURN] Step %d done: turned=%.1f° / %.1f° (yaw=%.1f°)\n",
-        stepIdx + 1, turned, targetDeg, currentYaw);
-
-    if (turned >= targetDeg - tol) {
-      Serial.printf("[GYRO-TURN] Target reached: turned=%.1f° (target=%.1f°)\n",
-                    turned, targetDeg);
-      break;
-    }
-
-    if (millis() - tStart > 60000) {
-      Serial.println("[GYRO-TURN] 60s timeout reached");
-      break;
-    }
-
-    stepIdx++;
-  }
-
-  // Return all hips to standing
-  memcpy(tgt, curAngle, sizeof(tgt));
-  for (int l = 0; l < 4; l++)
-    tgt[l][0] = STAND_POSE[l][0];
-  snapTo(tgt, SETTLE_MS);
-
-  mpuStationary = true;
-  gyroTurnRunning = false;
-  snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "Done: %.1f° in %d steps",
-           gyroTurnDone, stepIdx + 1);
-  Serial.printf("[GYRO-TURN] Finished: turned=%.1f° target=%.1f° (yaw=%.1f°)\n",
-                gyroTurnDone, targetDeg, mpuYaw);
+    mpuStationary = true;
+    gyroTurnRunning = false;
+    snprintf(gyroTurnPhase, sizeof(gyroTurnPhase), "Done: %.1f° in %d steps", gyroTurnDone, stepIdx + 1);
+    Serial.printf("[GYRO-TURN] Finished: turned=%.1f° target=%.1f° (yaw=%.1f°)\n",
+                  gyroTurnDone, targetDeg, mpuYaw);
 }
 
 // ─── Line Following Walk (Closed-Loop Steering) ──────────────────────────────
 void lineFollowWalk(int steps) {
-  lfRunning = true;
-  lfStop = false;
-  lfStepsDone = 0;
-  lfTargetSteps = steps;
+    lfRunning = true;
+    lfStop = false;
+    lfStepsDone = 0;
+    lfTargetSteps = steps;
 
-  int totalSteps = (steps <= 0) ? 999999 : steps;
-  float prevErr = lineErrMm;
-  int tgt[4][3];
+    int totalSteps = (steps <= 0) ? 999999 : steps;
+    float prevErr = lineErrMm;
+    int tgt[4][3];
 
-  Serial.printf("[LF] Starting line follow: steps=%d (0=inf), Kp=%.2f Kd=%.2f "
-                "steerSign=%d swap=%d\n",
-                steps, lfKp, lfKd, lfSteerSign, lfSwapSens);
-  snprintf(lfStatusStr, sizeof(lfStatusStr), "Line follow active (0/%d)",
-           steps);
+    Serial.printf("[LF] Starting line follow: steps=%d (0=inf), Kp=%.2f Kd=%.2f steerSign=%d swap=%d\n",
+                  steps, lfKp, lfKd, lfSteerSign, lfSwapSens);
+    snprintf(lfStatusStr, sizeof(lfStatusStr), "Line follow active (0/%d)", steps);
 
-  for (int s = 0; s < totalSteps && !lfStop; s++) {
-    // Read line error
-    linePoll();
+    for (int s = 0; s < totalSteps && !lfStop; s++) {
+        // Read line error
+        linePoll();
 
-    if (!lineFound && lfStopLost) {
-      Serial.println("[LF] Line lost — stopping line follow.");
-      snprintf(lfStatusStr, sizeof(lfStatusStr),
-               "Stopped: line lost at step %d", s);
-      break;
+        if (!lineFound && lfStopLost) {
+            Serial.println("[LF] Line lost — stopping line follow.");
+            snprintf(lfStatusStr, sizeof(lfStatusStr), "Stopped: line lost at step %d", s);
+            break;
+        }
+
+        // Calculate PD steering
+        float err = lineFound ? lineErrMm : prevErr;
+        if (lfSwapSens) err = -err; // optional swap if sensor board mounted reversed
+        float dErr = err - prevErr;
+        prevErr = err;
+
+        // lfSteerSign applies user-selectable sign (default -1 inverted)
+        float corr = (float)lfSteerSign * (lfKp * err + lfKd * dErr);
+        corr = constrain(corr, (float)-lfMaxCorr, (float)lfMaxCorr);
+
+        int swingL = constrain(SWING_ANGLE + (int)roundf(corr), 5, 35);
+        int swingR = constrain(SWING_ANGLE - (int)roundf(corr), 5, 35);
+
+        int hipSwing[4] = {swingL, swingR, swingL, swingR}; // 0=FL, 1=FR, 2=BL, 3=BR
+
+        int pair = s % 2;
+
+        // Phase A: lift swingPair & swing hips with differential stride
+        memcpy(tgt, curAngle, sizeof(tgt));
+        for (int l = 0; l < 4; l++) {
+            if (PAIR[l] == pair) {
+                tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * LIFT_ANGLE;
+                tgt[l][0] = STAND_POSE[l][0] + WALK_SIGN[l] * hipSwing[l];
+            } else {
+                tgt[l][0] = STAND_POSE[l][0];
+            }
+        }
+        snprintf(lfStatusStr, sizeof(lfStatusStr), "Step %d/%d (err=%.1fmm L=%d° R=%d°)",
+                 s + 1, steps, err, swingL, swingR);
+        snapTo(tgt, SETTLE_MS);
+        if (lfStop) break;
+
+        // Phase B: lower swingPair back to ground
+        for (int l = 0; l < 4; l++) {
+            if (PAIR[l] == pair) tgt[l][1] = STAND_POSE[l][1];
+        }
+        snapTo(tgt, SETTLE_MS);
+
+        lfStepsDone++;
     }
 
-    // Calculate PD steering
-    float err = lineFound ? lineErrMm : prevErr;
-    if (lfSwapSens)
-      err = -err; // optional swap if sensor board mounted reversed
-    float dErr = err - prevErr;
-    prevErr = err;
-
-    // lfSteerSign applies user-selectable sign (default -1 inverted)
-    float corr = (float)lfSteerSign * (lfKp * err + lfKd * dErr);
-    corr = constrain(corr, (float)-lfMaxCorr, (float)lfMaxCorr);
-
-    int swingL = constrain(SWING_ANGLE + (int)roundf(corr), 5, 35);
-    int swingR = constrain(SWING_ANGLE - (int)roundf(corr), 5, 35);
-
-    int hipSwing[4] = {swingL, swingR, swingL,
-                       swingR}; // 0=FL, 1=FR, 2=BL, 3=BR
-
-    int pair = s % 2;
-
-    // Phase A: lift swingPair & swing hips with differential stride
+    // Return all hips to standing pose
     memcpy(tgt, curAngle, sizeof(tgt));
-    for (int l = 0; l < 4; l++) {
-      if (PAIR[l] == pair) {
-        tgt[l][1] = STAND_POSE[l][1] + LIFT_SIGN[l] * LIFT_ANGLE;
-        tgt[l][0] = STAND_POSE[l][0] + WALK_SIGN[l] * hipSwing[l];
-      } else {
-        tgt[l][0] = STAND_POSE[l][0];
-      }
-    }
-    snprintf(lfStatusStr, sizeof(lfStatusStr),
-             "Step %d/%d (err=%.1fmm L=%d° R=%d°)", s + 1, steps, err, swingL,
-             swingR);
-    snapTo(tgt, SETTLE_MS);
-    if (lfStop)
-      break;
-
-    // Phase B: lower swingPair back to ground
-    for (int l = 0; l < 4; l++) {
-      if (PAIR[l] == pair)
-        tgt[l][1] = STAND_POSE[l][1];
-    }
+    for (int l = 0; l < 4; l++) tgt[l][0] = STAND_POSE[l][0];
     snapTo(tgt, SETTLE_MS);
 
-    lfStepsDone++;
-  }
-
-  // Return all hips to standing pose
-  memcpy(tgt, curAngle, sizeof(tgt));
-  for (int l = 0; l < 4; l++)
-    tgt[l][0] = STAND_POSE[l][0];
-  snapTo(tgt, SETTLE_MS);
-
-  lfRunning = false;
-  snprintf(lfStatusStr, sizeof(lfStatusStr), "Done: %d steps completed",
-           lfStepsDone);
-  Serial.printf("[LF] Finished: %d steps done\n", lfStepsDone);
+    lfRunning = false;
+    snprintf(lfStatusStr, sizeof(lfStatusStr), "Done: %d steps completed", lfStepsDone);
+    Serial.printf("[LF] Finished: %d steps done\n", lfStepsDone);
 }
 
 void walkForward(int steps) { gaitWith(WALK_SIGN, steps); }
 
 void turnRight(int steps) {
-  int prevLift = LIFT_ANGLE, prevSwing = SWING_ANGLE;
-  LIFT_ANGLE = TURN_LIFT_ANGLE;
-  SWING_ANGLE = TURN_SWING_ANGLE;
-  gaitWith(TURN_R_SIGN, steps);
-  LIFT_ANGLE = prevLift;
-  SWING_ANGLE = prevSwing;
+    int prevLift = LIFT_ANGLE, prevSwing = SWING_ANGLE;
+    LIFT_ANGLE = TURN_LIFT_ANGLE; SWING_ANGLE = TURN_SWING_ANGLE;
+    gaitWith(TURN_R_SIGN, steps);
+    LIFT_ANGLE = prevLift; SWING_ANGLE = prevSwing;
 }
 
 void turnLeft(int steps) {
-  int prevLift = LIFT_ANGLE, prevSwing = SWING_ANGLE;
-  LIFT_ANGLE = TURN_LIFT_ANGLE;
-  SWING_ANGLE = TURN_SWING_ANGLE;
-  gaitWith(TURN_L_SIGN, steps);
-  LIFT_ANGLE = prevLift;
-  SWING_ANGLE = prevSwing;
+    int prevLift = LIFT_ANGLE, prevSwing = SWING_ANGLE;
+    LIFT_ANGLE = TURN_LIFT_ANGLE; SWING_ANGLE = TURN_SWING_ANGLE;
+    gaitWith(TURN_L_SIGN, steps);
+    LIFT_ANGLE = prevLift; SWING_ANGLE = prevSwing;
 }
 
 void standUp() {
-  snprintf(statusMsg, sizeof(statusMsg), "Standing up...");
-  moveSmooth(STAND_POSE, 60, 30);
-  snprintf(statusMsg, sizeof(statusMsg), "Standing — idle");
+    snprintf(statusMsg, sizeof(statusMsg), "Standing up...");
+    moveSmooth(STAND_POSE, 60, 30);
+    snprintf(statusMsg, sizeof(statusMsg), "Standing — idle");
 }
 
-// ─── DASHBOARD HTML
-// ───────────────────────────────────────────────────────────
+// ─── DASHBOARD HTML ───────────────────────────────────────────────────────────
 const char PAGE[] PROGMEM = R"html(
 <!DOCTYPE html><html><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1741,627 +1676,470 @@ setInterval(pollSensors, 350);
 </body></html>
 )html";
 
-// ─── HTTP helpers
-// ─────────────────────────────────────────────────────────────
-void cors() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Cache-Control", "no-store");
-}
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
+void cors() { server.sendHeader("Access-Control-Allow-Origin","*"); server.sendHeader("Cache-Control","no-store"); }
 
 void sendBusy() {
-  cors();
-  server.send(200, "application/json", "{\"ok\":false,\"msg\":\"busy\"}");
+    cors(); server.send(200,"application/json","{\"ok\":false,\"msg\":\"busy\"}");
 }
 
 void applyGaitFromArgs() {
-  if (server.hasArg("la"))
-    LIFT_ANGLE = constrain(server.arg("la").toInt(), 5, 60);
-  if (server.hasArg("sa"))
-    SWING_ANGLE = constrain(server.arg("sa").toInt(), 5, 60);
-  if (server.hasArg("sm"))
-    SETTLE_MS = constrain(server.arg("sm").toInt(), 40, 800);
-  if (server.hasArg("tsa"))
-    TURN_SWING_ANGLE = constrain(server.arg("tsa").toInt(), 5, 40);
+    if (server.hasArg("la"))  LIFT_ANGLE = constrain(server.arg("la").toInt(), 5, 60);
+    if (server.hasArg("sa"))  SWING_ANGLE = constrain(server.arg("sa").toInt(), 5, 60);
+    if (server.hasArg("sm"))  SETTLE_MS   = constrain(server.arg("sm").toInt(), 40, 800);
+    if (server.hasArg("tsa")) TURN_SWING_ANGLE = constrain(server.arg("tsa").toInt(), 5, 40);
 }
 
-// ─── Motion handlers
-// ──────────────────────────────────────────────────────────
-void hRoot() { server.send_P(200, "text/html", PAGE); }
+// ─── Motion handlers ──────────────────────────────────────────────────────────
+void hRoot()  { server.send_P(200,"text/html",PAGE); }
 
 void hStand() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  cors();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Standing up...\"}");
-  busy = true;
-  standUp();
-  busy = false;
+    if(busy){sendBusy();return;}
+    cors(); server.send(200,"application/json","{\"ok\":true,\"msg\":\"Standing up...\"}");
+    busy=true; standUp(); busy=false;
 }
 
 void hHome() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  cors();
-  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Going HOME\"}");
-  busy = true;
-  snprintf(statusMsg, sizeof(statusMsg), "Going HOME...");
-  applyPose(HOME_POSE);
-  snprintf(statusMsg, sizeof(statusMsg), "HOME — idle");
-  busy = false;
+    if(busy){sendBusy();return;}
+    cors(); server.send(200,"application/json","{\"ok\":true,\"msg\":\"Going HOME\"}");
+    busy=true;
+    snprintf(statusMsg,sizeof(statusMsg),"Going HOME...");
+    applyPose(HOME_POSE);
+    snprintf(statusMsg,sizeof(statusMsg),"HOME — idle");
+    busy=false;
 }
 
 void hWalk() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  int steps = server.hasArg("steps")
-                  ? constrain(server.arg("steps").toInt(), 1, 200)
-                  : 10;
-  applyGaitFromArgs();
-  cors();
-  char msg[80];
-  snprintf(msg, sizeof(msg), "Walk %d steps (lift=%d° swing=%d° settle=%dms)",
-           steps, LIFT_ANGLE, SWING_ANGLE, SETTLE_MS);
-  server.send(200, "application/json",
-              String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
-  busy = true;
-  snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
-  walkForward(steps);
-  snprintf(statusMsg, sizeof(statusMsg), "Walk done — idle");
-  busy = false;
+    if(busy){sendBusy();return;}
+    int steps = server.hasArg("steps") ? constrain(server.arg("steps").toInt(),1,200) : 10;
+    applyGaitFromArgs();
+    cors();
+    char msg[80];
+    snprintf(msg,sizeof(msg),"Walk %d steps (lift=%d° swing=%d° settle=%dms)",steps,LIFT_ANGLE,SWING_ANGLE,SETTLE_MS);
+    server.send(200,"application/json",String("{\"ok\":true,\"msg\":\"")+msg+"\"}");
+    busy=true;
+    snprintf(statusMsg,sizeof(statusMsg),"%s",msg);
+    walkForward(steps);
+    snprintf(statusMsg,sizeof(statusMsg),"Walk done — idle");
+    busy=false;
 }
 
 void hTurn() {
-  // 1. Immediate stop command
-  if (server.hasArg("stop")) {
-    gyroTurnStop = true;
-    cors();
-    server.send(200, "application/json",
-                "{\"ok\":true,\"msg\":\"Stopping turn...\"}");
-    return;
-  }
+    // 1. Immediate stop command
+    if (server.hasArg("stop")) {
+        gyroTurnStop = true;
+        cors();
+        server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Stopping turn...\"}");
+        return;
+    }
 
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  applyGaitFromArgs();
+    if (busy) { sendBusy(); return; }
+    applyGaitFromArgs();
 
-  String dir = server.hasArg("dir") ? server.arg("dir") : "right";
-  bool right = (dir == "right" || dir == "cw");
+    String dir = server.hasArg("dir") ? server.arg("dir") : "right";
+    bool right = (dir == "right" || dir == "cw");
 
-  // 2. Closed-loop gyro turn requested
-  if (server.hasArg("deg") || server.hasArg("preset")) {
-    float deg = 90.0f;
-    if (server.hasArg("deg"))
-      deg = server.arg("deg").toFloat();
-    else if (server.hasArg("preset"))
-      deg = server.arg("preset").toFloat();
-    deg = constrain(deg, 5.0f, 360.0f);
+    // 2. Closed-loop gyro turn requested
+    if (server.hasArg("deg") || server.hasArg("preset")) {
+        float deg = 90.0f;
+        if (server.hasArg("deg")) deg = server.arg("deg").toFloat();
+        else if (server.hasArg("preset")) deg = server.arg("preset").toFloat();
+        deg = constrain(deg, 5.0f, 360.0f);
 
+        cors();
+        char msg[80];
+        snprintf(msg, sizeof(msg), "Gyro turn %s %.1f° (lift=%d° swing=%d°)",
+                 right ? "right" : "left", deg, TURN_LIFT_ANGLE, TURN_SWING_ANGLE);
+        server.send(200, "application/json", String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
+
+        busy = true;
+        snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
+        gyroTurnWith(right ? TURN_R_SIGN : TURN_L_SIGN, deg);
+        snprintf(statusMsg, sizeof(statusMsg), "Gyro turn done (%.1f°) — idle", gyroTurnDone);
+        busy = false;
+        return;
+    }
+
+    // 3. Fallback: manual step-based turn
+    int steps = server.hasArg("steps") ? constrain(server.arg("steps").toInt(), 1, 200) : STEPS_90;
     cors();
     char msg[80];
-    snprintf(msg, sizeof(msg), "Gyro turn %s %.1f° (lift=%d° swing=%d°)",
-             right ? "right" : "left", deg, TURN_LIFT_ANGLE, TURN_SWING_ANGLE);
-    server.send(200, "application/json",
-                String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
+    snprintf(msg, sizeof(msg), "Turn %s %d steps (lift=%d° swing=%d°)",
+             right ? "right" : "left", steps, TURN_LIFT_ANGLE, TURN_SWING_ANGLE);
+    server.send(200, "application/json", String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
 
     busy = true;
     snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
-    gyroTurnWith(right ? TURN_R_SIGN : TURN_L_SIGN, deg);
-    snprintf(statusMsg, sizeof(statusMsg), "Gyro turn done (%.1f°) — idle",
-             gyroTurnDone);
+    if (right) turnRight(steps); else turnLeft(steps);
+    snprintf(statusMsg, sizeof(statusMsg), "Turn done — idle");
     busy = false;
-    return;
-  }
-
-  // 3. Fallback: manual step-based turn
-  int steps = server.hasArg("steps")
-                  ? constrain(server.arg("steps").toInt(), 1, 200)
-                  : STEPS_90;
-  cors();
-  char msg[80];
-  snprintf(msg, sizeof(msg), "Turn %s %d steps (lift=%d° swing=%d°)",
-           right ? "right" : "left", steps, TURN_LIFT_ANGLE, TURN_SWING_ANGLE);
-  server.send(200, "application/json",
-              String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
-
-  busy = true;
-  snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
-  if (right)
-    turnRight(steps);
-  else
-    turnLeft(steps);
-  snprintf(statusMsg, sizeof(statusMsg), "Turn done — idle");
-  busy = false;
 }
 
-// ─── Line Follow Handlers
-// ─────────────────────────────────────────────────────
+// ─── Line Follow Handlers ─────────────────────────────────────────────────────
 void hLfStart() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 30;
-  if (server.hasArg("kp"))
-    lfKp = constrain(server.arg("kp").toFloat(), 0.05f, 1.5f);
-  if (server.hasArg("lost"))
-    lfStopLost = (server.arg("lost").toInt() != 0);
-  if (server.hasArg("inv"))
-    lfSteerSign = (server.arg("inv").toInt() != 0) ? -1 : 1;
-  if (server.hasArg("swap"))
-    lfSwapSens = (server.arg("swap").toInt() != 0);
-  applyGaitFromArgs();
+    if (busy) { sendBusy(); return; }
+    int steps = server.hasArg("steps") ? server.arg("steps").toInt() : 30;
+    if (server.hasArg("kp"))   lfKp = constrain(server.arg("kp").toFloat(), 0.05f, 1.5f);
+    if (server.hasArg("lost")) lfStopLost = (server.arg("lost").toInt() != 0);
+    if (server.hasArg("inv"))  lfSteerSign = (server.arg("inv").toInt() != 0) ? -1 : 1;
+    if (server.hasArg("swap")) lfSwapSens  = (server.arg("swap").toInt() != 0);
+    applyGaitFromArgs();
 
-  cors();
-  char msg[80];
-  snprintf(msg, sizeof(msg), "Line follow: %d steps (Kp=%.2f, steerSign=%d)",
-           steps, lfKp, lfSteerSign);
-  server.send(200, "application/json",
-              String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
+    cors();
+    char msg[80];
+    snprintf(msg, sizeof(msg), "Line follow: %d steps (Kp=%.2f, steerSign=%d)", steps, lfKp, lfSteerSign);
+    server.send(200, "application/json", String("{\"ok\":true,\"msg\":\"") + msg + "\"}");
 
-  busy = true;
-  snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
-  lineFollowWalk(steps);
-  snprintf(statusMsg, sizeof(statusMsg), "Line follow ended — idle");
-  busy = false;
+    busy = true;
+    snprintf(statusMsg, sizeof(statusMsg), "%s", msg);
+    lineFollowWalk(steps);
+    snprintf(statusMsg, sizeof(statusMsg), "Line follow ended — idle");
+    busy = false;
 }
 
 void hLfStop() {
-  lfStop = true;
-  cors();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Stopping line follow...\"}");
+    lfStop = true;
+    cors();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Stopping line follow...\"}");
 }
 
 void hLfCfg() {
-  cors();
-  if (server.hasArg("inv"))
-    lfSteerSign = (server.arg("inv").toInt() != 0) ? -1 : 1;
-  if (server.hasArg("swap"))
-    lfSwapSens = (server.arg("swap").toInt() != 0);
-  if (server.hasArg("kp"))
-    lfKp = constrain(server.arg("kp").toFloat(), 0.05f, 1.5f);
-  lineSaveConfig();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Line follow config updated\"}");
+    cors();
+    if (server.hasArg("inv"))  lfSteerSign = (server.arg("inv").toInt() != 0) ? -1 : 1;
+    if (server.hasArg("swap")) lfSwapSens  = (server.arg("swap").toInt() != 0);
+    if (server.hasArg("kp"))   lfKp        = constrain(server.arg("kp").toFloat(), 0.05f, 1.5f);
+    lineSaveConfig();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Line follow config updated\"}");
 }
 
 void hLfStatus() {
-  cors();
-  char j[250];
-  snprintf(j, sizeof(j),
-           "{\"running\":%s,\"steps\":%d,\"target\":%d,\"err\":%.1f,\"found\":%"
-           "s,\"status\":\"%s\"}",
-           lfRunning ? "true" : "false", lfStepsDone, lfTargetSteps, lineErrMm,
-           lineFound ? "true" : "false", lfStatusStr);
-  server.send(200, "application/json", j);
+    cors();
+    char j[250];
+    snprintf(j, sizeof(j),
+        "{\"running\":%s,\"steps\":%d,\"target\":%d,\"err\":%.1f,\"found\":%s,\"status\":\"%s\"}",
+        lfRunning ? "true" : "false",
+        lfStepsDone, lfTargetSteps,
+        lineErrMm, lineFound ? "true" : "false",
+        lfStatusStr);
+    server.send(200, "application/json", j);
 }
 
-// ─── Line Array Calibration Handlers
-// ──────────────────────────────────────────
+// ─── Line Array Calibration Handlers ──────────────────────────────────────────
 void hLineCalStart() {
-  cors();
-  lineStartCal(5000);
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Calibration sweep started (5s)\"}");
+    cors();
+    lineStartCal(5000);
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Calibration sweep started (5s)\"}");
 }
 
 void hLineCalStop() {
-  cors();
-  lineFinishCal();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Calibration finished\"}");
+    cors();
+    lineFinishCal();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Calibration finished\"}");
 }
 
 void hLineCalSetFloor() {
-  cors();
-  for (int i = 0; i < LINE_N; i++) {
-    uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
-    lineMin[i] = v;
-  }
-  lineCalibrated = true;
-  snprintf(lineCalMsg, sizeof(lineCalMsg),
-           "Floor baseline set from current readings");
-  lineSaveConfig();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Floor baseline set\"}");
+    cors();
+    for (int i = 0; i < LINE_N; i++) {
+        uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
+        lineMin[i] = v;
+    }
+    lineCalibrated = true;
+    snprintf(lineCalMsg, sizeof(lineCalMsg), "Floor baseline set from current readings");
+    lineSaveConfig();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Floor baseline set\"}");
 }
 
 void hLineCalSetLine() {
-  cors();
-  for (int i = 0; i < LINE_N; i++) {
-    uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
-    lineMax[i] = v;
-  }
-  lineCalibrated = true;
-  snprintf(lineCalMsg, sizeof(lineCalMsg),
-           "Line peak set from current readings");
-  lineSaveConfig();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Line peak set\"}");
+    cors();
+    for (int i = 0; i < LINE_N; i++) {
+        uint16_t v = (uint16_t)analogRead(LINE_PINS[i]);
+        lineMax[i] = v;
+    }
+    lineCalibrated = true;
+    snprintf(lineCalMsg, sizeof(lineCalMsg), "Line peak set from current readings");
+    lineSaveConfig();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Line peak set\"}");
 }
 
 void hLineSetThr() {
-  cors();
-  if (server.hasArg("thr")) {
-    lineThr = constrain(server.arg("thr").toFloat(), 0.05f, 0.95f);
-    lineSaveConfig();
-    server.send(200, "application/json",
-                "{\"ok\":true,\"msg\":\"Threshold updated\"}");
-  } else {
-    server.send(400, "application/json",
-                "{\"ok\":false,\"msg\":\"missing thr\"}");
-  }
+    cors();
+    if (server.hasArg("thr")) {
+        lineThr = constrain(server.arg("thr").toFloat(), 0.05f, 0.95f);
+        lineSaveConfig();
+        server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Threshold updated\"}");
+    } else {
+        server.send(400, "application/json", "{\"ok\":false,\"msg\":\"missing thr\"}");
+    }
 }
 
 void hLineSetWh() {
-  cors();
-  if (server.hasArg("wh")) {
-    lineWhiteHigh = (server.arg("wh").toInt() != 0);
-    lineSaveConfig();
-    server.send(200, "application/json",
-                "{\"ok\":true,\"msg\":\"Polarity updated\"}");
-  } else {
-    server.send(400, "application/json",
-                "{\"ok\":false,\"msg\":\"missing wh\"}");
-  }
+    cors();
+    if (server.hasArg("wh")) {
+        lineWhiteHigh = (server.arg("wh").toInt() != 0);
+        lineSaveConfig();
+        server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Polarity updated\"}");
+    } else {
+        server.send(400, "application/json", "{\"ok\":false,\"msg\":\"missing wh\"}");
+    }
 }
 
 void hLineSave() {
-  cors();
-  lineSaveConfig();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Calibration saved to flash\"}");
+    cors();
+    lineSaveConfig();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Calibration saved to flash\"}");
 }
 
-// ─── ARM handlers
-// ─────────────────────────────────────────────────────────────
-void sendArmState(const char *msg = "") {
-  cors();
-  char j[200];
-  snprintf(j, sizeof(j),
-           "{\"ok\":true,\"msg\":\"%s\",\"lift\":%d,\"grip\":%d,\"lup\":%d,"
-           "\"ldn\":%d,\"gop\":%d,\"gcl\":%d}",
-           msg, armLiftPos, armGripPos, armLiftUp, armLiftDown, armGripOpen,
-           armGripClose);
-  server.send(200, "application/json", j);
+// ─── ARM handlers ─────────────────────────────────────────────────────────────
+void sendArmState(const char* msg="") {
+    cors();
+    char j[200];
+    snprintf(j,sizeof(j),
+        "{\"ok\":true,\"msg\":\"%s\",\"lift\":%d,\"grip\":%d,\"lup\":%d,\"ldn\":%d,\"gop\":%d,\"gcl\":%d}",
+        msg, armLiftPos, armGripPos, armLiftUp, armLiftDown, armGripOpen, armGripClose);
+    server.send(200,"application/json",j);
 }
 
 void hArmStatus() { sendArmState("arm status"); }
 
 void hArmUp() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  busy = true;
-  sweepLift(armLiftUp);
-  busy = false;
-  sendArmState("Arm UP");
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    busy=true; sweepLift(armLiftUp); busy=false;
+    sendArmState("Arm UP");
 }
 void hArmDown() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  busy = true;
-  sweepGrip(armGripOpen);
-  delay(200);
-  sweepLift(armLiftDown);
-  busy = false;
-  sendArmState("Arm DOWN (opened first)");
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    busy=true; sweepGrip(armGripOpen); delay(200); sweepLift(armLiftDown); busy=false;
+    sendArmState("Arm DOWN (opened first)");
 }
 void hArmOpen() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  busy = true;
-  sweepGrip(armGripOpen);
-  busy = false;
-  sendArmState("Gripper OPEN");
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    busy=true; sweepGrip(armGripOpen); busy=false;
+    sendArmState("Gripper OPEN");
 }
 void hArmClose() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  busy = true;
-  sweepGrip(armGripClose);
-  busy = false;
-  sendArmState("Gripper CLOSE");
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    busy=true; sweepGrip(armGripClose); busy=false;
+    sendArmState("Gripper CLOSE");
 }
 void hArmSetLift() {
-  if (!server.hasArg("a")) {
-    cors();
-    server.send(400, "application/json", "{\"error\":\"missing a\"}");
-    return;
-  }
-  int a = constrain(server.arg("a").toInt(), 20, 160);
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  busy = true;
-  sweepLift(a);
-  busy = false;
-  sendArmState("Lift set");
+    if(!server.hasArg("a")){cors();server.send(400,"application/json","{\"error\":\"missing a\"}");return;}
+    int a = constrain(server.arg("a").toInt(),20,160);
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    if(busy){sendBusy();return;}
+    busy=true; sweepLift(a); busy=false;
+    sendArmState("Lift set");
 }
 void hArmSetGrip() {
-  if (!server.hasArg("a")) {
-    cors();
-    server.send(400, "application/json", "{\"error\":\"missing a\"}");
-    return;
-  }
-  int a = constrain(server.arg("a").toInt(), 0, 180);
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  busy = true;
-  sweepGrip(a);
-  busy = false;
-  sendArmState("Grip set");
+    if(!server.hasArg("a")){cors();server.send(400,"application/json","{\"error\":\"missing a\"}");return;}
+    int a = constrain(server.arg("a").toInt(),0,180);
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    if(busy){sendBusy();return;}
+    busy=true; sweepGrip(a); busy=false;
+    sendArmState("Grip set");
 }
 void hArmPick() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  cors();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Pick sequence...\"}");
-  busy = true;
-  sweepGrip(armGripOpen);
-  delay(200);
-  sweepLift(armLiftDown);
-  delay(200);
-  sweepGrip(armGripClose);
-  delay(200);
-  sweepLift(armLiftUp);
-  busy = false;
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    cors(); server.send(200,"application/json","{\"ok\":true,\"msg\":\"Pick sequence...\"}");
+    busy=true;
+    sweepGrip(armGripOpen); delay(200);
+    sweepLift(armLiftDown);  delay(200);
+    sweepGrip(armGripClose); delay(200);
+    sweepLift(armLiftUp);
+    busy=false;
 }
 void hArmPlace() {
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  if (server.hasArg("spd"))
-    armSpeedMs = constrain(server.arg("spd").toInt(), 1, 100);
-  cors();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Place sequence...\"}");
-  busy = true;
-  sweepLift(armLiftDown);
-  delay(200);
-  sweepGrip(armGripOpen);
-  delay(200);
-  sweepLift(armLiftUp);
-  delay(200);
-  sweepGrip(armGripClose);
-  busy = false;
+    if(busy){sendBusy();return;}
+    if(server.hasArg("spd")) armSpeedMs = constrain(server.arg("spd").toInt(),1,100);
+    cors(); server.send(200,"application/json","{\"ok\":true,\"msg\":\"Place sequence...\"}");
+    busy=true;
+    sweepLift(armLiftDown);  delay(200);
+    sweepGrip(armGripOpen);  delay(200);
+    sweepLift(armLiftUp);    delay(200);
+    sweepGrip(armGripClose);
+    busy=false;
 }
 void hArmCfg() {
-  if (server.hasArg("lup"))
-    armLiftUp = constrain(server.arg("lup").toInt(), 20, 160);
-  if (server.hasArg("ldn"))
-    armLiftDown = constrain(server.arg("ldn").toInt(), 20, 160);
-  if (server.hasArg("gop"))
-    armGripOpen = constrain(server.arg("gop").toInt(), 0, 180);
-  if (server.hasArg("gcl"))
-    armGripClose = constrain(server.arg("gcl").toInt(), 0, 180);
-  sendArmState("Config saved (RAM only)");
+    if(server.hasArg("lup")) armLiftUp   = constrain(server.arg("lup").toInt(),20,160);
+    if(server.hasArg("ldn")) armLiftDown = constrain(server.arg("ldn").toInt(),20,160);
+    if(server.hasArg("gop")) armGripOpen = constrain(server.arg("gop").toInt(),0,180);
+    if(server.hasArg("gcl")) armGripClose= constrain(server.arg("gcl").toInt(),0,180);
+    sendArmState("Config saved (RAM only)");
 }
 
-// ─── Sensor data handlers
-// ─────────────────────────────────────────────────────
+// ─── Sensor data handlers ─────────────────────────────────────────────────────
 void hLineData() {
-  cors();
-  char buf[300];
-  String j = "{\"raw\":[";
-  for (int i = 0; i < LINE_N; i++) {
-    j += lineRaw[i];
-    if (i < LINE_N - 1)
-      j += ",";
-  }
-  j += "],\"norm\":[";
-  for (int i = 0; i < LINE_N; i++) {
-    j += (int)(lineNorm[i] * 1000.0f);
-    if (i < LINE_N - 1)
-      j += ",";
-  }
+    cors();
+    char buf[300];
+    String j = "{\"raw\":[";
+    for(int i=0;i<LINE_N;i++){ j += lineRaw[i]; if(i<LINE_N-1) j += ","; }
+    j += "],\"norm\":[";
+    for(int i=0;i<LINE_N;i++){ j += (int)(lineNorm[i]*1000.0f); if(i<LINE_N-1) j += ","; }
 
-  uint32_t now = millis();
-  uint32_t calLeft =
-      (lineCalActive && lineCalUntil > now) ? (lineCalUntil - now) : 0;
+    uint32_t now = millis();
+    uint32_t calLeft = (lineCalActive && lineCalUntil > now) ? (lineCalUntil - now) : 0;
 
-  snprintf(
-      buf, sizeof(buf),
-      "],\"thr\":%.2f,\"mask\":%u,\"act\":%u,\"found\":%s,\"cen\":%.2f,\"err\":"
-      "%.1f,"
-      "\"cal\":%s,\"calact\":%s,\"calleft\":%u,\"calmsg\":\"%s\",\"wh\":%s}",
-      lineThr, lineMask, lineActCnt, lineFound ? "true" : "false", lineCentroid,
-      lineErrMm, lineCalibrated ? "true" : "false",
-      lineCalActive ? "true" : "false", calLeft, lineCalMsg,
-      lineWhiteHigh ? "true" : "false");
-  j += buf;
-  server.send(200, "application/json", j);
+    snprintf(buf, sizeof(buf),
+        "],\"thr\":%.2f,\"mask\":%u,\"act\":%u,\"found\":%s,\"cen\":%.2f,\"err\":%.1f,"
+        "\"cal\":%s,\"calact\":%s,\"calleft\":%u,\"calmsg\":\"%s\",\"wh\":%s}",
+        lineThr, lineMask, lineActCnt, lineFound ? "true" : "false",
+        lineCentroid, lineErrMm,
+        lineCalibrated ? "true" : "false",
+        lineCalActive ? "true" : "false",
+        calLeft, lineCalMsg,
+        lineWhiteHigh ? "true" : "false");
+    j += buf;
+    server.send(200,"application/json",j);
 }
 
 void hTofData() {
-  cors();
-  char b[200];
-  snprintf(b, sizeof(b),
-           "{\"front_ok\":%s,\"right_ok\":%s,\"left_ok\":%s,"
-           "\"front\":%.1f,\"right\":%.1f,\"left\":%.1f}",
-           tofOk[0] ? "true" : "false", tofOk[1] ? "true" : "false",
-           tofOk[2] ? "true" : "false", tofDist[0], tofDist[1], tofDist[2]);
-  server.send(200, "application/json", b);
+    cors();
+    char b[200];
+    snprintf(b,sizeof(b),
+        "{\"front_ok\":%s,\"right_ok\":%s,\"left_ok\":%s,"
+        "\"front\":%.1f,\"right\":%.1f,\"left\":%.1f}",
+        tofOk[0]?"true":"false",tofOk[1]?"true":"false",tofOk[2]?"true":"false",
+        tofDist[0],tofDist[1],tofDist[2]);
+    server.send(200,"application/json",b);
 }
 
 void hMpuData() {
-  cors();
-  char j[140];
-  snprintf(j, sizeof(j),
-           "{\"ready\":%s,\"yaw\":%.2f,\"gz\":%.3f,\"cal\":%s,\"addr\":\"0x%"
-           "02X\",\"bias\":%.2f}",
-           mpuReady ? "true" : "false", mpuYaw, mpuGz,
-           mpuCalibrated ? "true" : "false", mpuAddr, mpuGBiasZ);
-  server.send(200, "application/json", j);
+    cors();
+    char j[140];
+    snprintf(j, sizeof(j),
+        "{\"ready\":%s,\"yaw\":%.2f,\"gz\":%.3f,\"cal\":%s,\"addr\":\"0x%02X\",\"bias\":%.2f}",
+        mpuReady ? "true" : "false", mpuYaw, mpuGz,
+        mpuCalibrated ? "true" : "false", mpuAddr, mpuGBiasZ);
+    server.send(200, "application/json", j);
 }
 
 void hMpuCal() {
-  cors();
-  if (busy) {
-    sendBusy();
-    return;
-  }
-  busy = true;
-  snprintf(statusMsg, sizeof(statusMsg), "Calibrating MPU6050 gyro bias...");
-  mpuCalibrate(400);
-  snprintf(statusMsg, sizeof(statusMsg), "Gyro calibrated (bias=%.2f)",
-           mpuGBiasZ);
-  busy = false;
+    cors();
+    if (busy) { sendBusy(); return; }
+    busy = true;
+    snprintf(statusMsg, sizeof(statusMsg), "Calibrating MPU6050 gyro bias...");
+    mpuCalibrate(400);
+    snprintf(statusMsg, sizeof(statusMsg), "Gyro calibrated (bias=%.2f)", mpuGBiasZ);
+    busy = false;
 
-  char j[140];
-  snprintf(j, sizeof(j),
-           "{\"ok\":true,\"msg\":\"Gyro calibrated "
-           "successfully\",\"bias\":%.2f,\"ready\":%s}",
-           mpuGBiasZ, mpuReady ? "true" : "false");
-  server.send(200, "application/json", j);
+    char j[140];
+    snprintf(j, sizeof(j),
+        "{\"ok\":true,\"msg\":\"Gyro calibrated successfully\",\"bias\":%.2f,\"ready\":%s}",
+        mpuGBiasZ, mpuReady ? "true" : "false");
+    server.send(200, "application/json", j);
 }
 
 void hGyroStatus() {
-  cors();
-  char j[250];
-  snprintf(j, sizeof(j),
-           "{\"running\":%s,\"yaw\":%.2f,\"target\":%.1f,\"done\":%.1f,"
-           "\"ready\":%s,\"phase\":\"%s\"}",
-           gyroTurnRunning ? "true" : "false", mpuYaw, gyroTurnTarget,
-           gyroTurnDone, mpuReady ? "true" : "false", gyroTurnPhase);
-  server.send(200, "application/json", j);
+    cors();
+    char j[250];
+    snprintf(j, sizeof(j),
+        "{\"running\":%s,\"yaw\":%.2f,\"target\":%.1f,\"done\":%.1f,\"ready\":%s,\"phase\":\"%s\"}",
+        gyroTurnRunning ? "true" : "false",
+        mpuYaw, gyroTurnTarget, gyroTurnDone,
+        mpuReady ? "true" : "false", gyroTurnPhase);
+    server.send(200, "application/json", j);
 }
 
 void hMpuZero() {
-  mpuYaw = 0.0f;
-  cors();
-  server.send(200, "application/json",
-              "{\"ok\":true,\"msg\":\"Yaw zeroed to 0.0°\"}");
+    mpuYaw = 0.0f;
+    cors();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Yaw zeroed to 0.0°\"}");
 }
 
 // ─── setup ───────────────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(115200);
+    Serial.begin(115200);
 
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(I2C_HZ);
-  Wire.setTimeOut(50);
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(I2C_HZ);
+    Wire.setTimeOut(50);
 
-  // PCA9685
-  pwm.begin();
-  pwm.setOscillatorFrequency(27000000);
-  pwm.setPWMFreq(SERVO_FREQ);
-  delay(10);
+    // PCA9685
+    pwm.begin();
+    pwm.setOscillatorFrequency(27000000);
+    pwm.setPWMFreq(SERVO_FREQ);
+    delay(10);
 
-  Serial.println("[MinTest] INITIAL pose");
-  applyPose(HOME_POSE);
-  delay(200); // allow robot body to completely settle before gyro calibration
+    Serial.println("[MinTest] INITIAL pose");
+    applyPose(HOME_POSE);
+    delay(200); // allow robot body to completely settle before gyro calibration
 
-  // Arm LEDC
-  armInitLedc();
-  rawLift(armLiftPos);
-  rawGrip(armGripPos);
-  Serial.printf("[ARM] Lift=%d Grip=%d\n", armLiftPos, armGripPos);
+    // Arm LEDC
+    armInitLedc();
+    rawLift(armLiftPos);
+    rawGrip(armGripPos);
+    Serial.printf("[ARM] Lift=%d Grip=%d\n", armLiftPos, armGripPos);
 
-  // ToF sensors
-  tofInit();
+    // ToF sensors
+    tofInit();
 
-  // MPU6050 Gyro (calibrated while resting still)
-  mpuInit();
+    // MPU6050 Gyro (calibrated while resting still)
+    mpuInit();
 
-  // Line array calibration load from NVS
-  lineLoadConfig();
+    // Line array calibration load from NVS
+    lineLoadConfig();
 
-  // Line array ADC pins
-  for (int i = 0; i < LINE_N; i++)
-    pinMode(LINE_PINS[i], INPUT);
-  Serial.println("[LINE] ADC pins ready");
+    // Line array ADC pins
+    for(int i=0;i<LINE_N;i++) pinMode(LINE_PINS[i], INPUT);
+    Serial.println("[LINE] ADC pins ready");
 
-  // WiFi Access Point
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS);
-  WiFi.setSleep(false);
-  Serial.printf("[WIFI] AP: %s  IP: %s\n", AP_SSID,
-                WiFi.softAPIP().toString().c_str());
+    // WiFi Access Point
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASS);
+    WiFi.setSleep(false);
+    Serial.printf("[WIFI] AP: %s  IP: %s\n", AP_SSID,
+                  WiFi.softAPIP().toString().c_str());
 
-  // HTTP Routes
-  server.on("/", hRoot);
-  server.on("/stand", hStand);
-  server.on("/home", hHome);
-  server.on("/walk", hWalk);
-  server.on("/turn", hTurn);
-  // Line follow
-  server.on("/lf/start", hLfStart);
-  server.on("/lf/stop", hLfStop);
-  server.on("/lf/cfg", hLfCfg);
-  server.on("/lf/status", hLfStatus);
-  // Line calibration
-  server.on("/line/cal/start", hLineCalStart);
-  server.on("/line/cal/stop", hLineCalStop);
-  server.on("/line/cal/setfloor", hLineCalSetFloor);
-  server.on("/line/cal/setline", hLineCalSetLine);
-  server.on("/line/setthr", hLineSetThr);
-  server.on("/line/setwh", hLineSetWh);
-  server.on("/line/save", hLineSave);
-  // Arm
-  server.on("/arm/status", hArmStatus);
-  server.on("/arm/up", hArmUp);
-  server.on("/arm/down", hArmDown);
-  server.on("/arm/open", hArmOpen);
-  server.on("/arm/close", hArmClose);
-  server.on("/arm/setlift", hArmSetLift);
-  server.on("/arm/setgrip", hArmSetGrip);
-  server.on("/arm/pick", hArmPick);
-  server.on("/arm/place", hArmPlace);
-  server.on("/arm/cfg", hArmCfg);
-  // Sensors
-  server.on("/linedata", hLineData);
-  server.on("/tofdata", hTofData);
-  server.on("/mpudata", hMpuData);
-  server.on("/mpu/cal", hMpuCal);
-  server.on("/gyrostatus", hGyroStatus);
-  server.on("/mpu/zero", hMpuZero);
+    // HTTP Routes
+    server.on("/",           hRoot);
+    server.on("/stand",      hStand);
+    server.on("/home",       hHome);
+    server.on("/walk",       hWalk);
+    server.on("/turn",       hTurn);
+    // Line follow
+    server.on("/lf/start",   hLfStart);
+    server.on("/lf/stop",    hLfStop);
+    server.on("/lf/cfg",     hLfCfg);
+    server.on("/lf/status",  hLfStatus);
+    // Line calibration
+    server.on("/line/cal/start",    hLineCalStart);
+    server.on("/line/cal/stop",     hLineCalStop);
+    server.on("/line/cal/setfloor", hLineCalSetFloor);
+    server.on("/line/cal/setline",  hLineCalSetLine);
+    server.on("/line/setthr",       hLineSetThr);
+    server.on("/line/setwh",        hLineSetWh);
+    server.on("/line/save",         hLineSave);
+    // Arm
+    server.on("/arm/status", hArmStatus);
+    server.on("/arm/up",     hArmUp);
+    server.on("/arm/down",   hArmDown);
+    server.on("/arm/open",   hArmOpen);
+    server.on("/arm/close",  hArmClose);
+    server.on("/arm/setlift",hArmSetLift);
+    server.on("/arm/setgrip",hArmSetGrip);
+    server.on("/arm/pick",   hArmPick);
+    server.on("/arm/place",  hArmPlace);
+    server.on("/arm/cfg",    hArmCfg);
+    // Sensors
+    server.on("/linedata",   hLineData);
+    server.on("/tofdata",    hTofData);
+    server.on("/mpudata",    hMpuData);
+    server.on("/mpu/cal",    hMpuCal);
+    server.on("/gyrostatus", hGyroStatus);
+    server.on("/mpu/zero",   hMpuZero);
 
-  server.begin();
-  Serial.println("[MinTest] Ready at http://192.168.4.1");
+    server.begin();
+    Serial.println("[MinTest] Ready at http://192.168.4.1");
 }
 
 // ─── loop ────────────────────────────────────────────────────────────────────
 void loop() {
-  server.handleClient();
-  tofPoll();
-  linePoll();
-  mpuPoll();
+    server.handleClient();
+    tofPoll();
+    linePoll();
+    mpuPoll();
 }
