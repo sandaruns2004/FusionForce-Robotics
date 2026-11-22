@@ -23,12 +23,13 @@
 //
 // SKETCH FOLDER (Modular project structure):
 //   RUNNER4_Robot_Line_03.ino  <- main robot entry point (cooperative loop)
-//   config/                    <- robot_config.h (centralized pin map, settings)
-//   arm/                       <- arm_interface.h (2-DOF servo arm control)
-//   gait/                      <- kinematics.h, servo_controller.h, trot_gait.h, line_follow.h
-//   sensors/                   <- color_sensor, line_sensor, tof_sensor
-//   tasks/                     <- competition_fsm.h, nav, sort, search, push, wall
-//   dashboard/                 <- web pages for robot, color, line, ToF, arm, LF
+//   config/                    <- robot_config.h (centralized pin map,
+//   settings) arm/                       <- arm_interface.h (2-DOF servo arm
+//   control) gait/                      <- kinematics.h, servo_controller.h,
+//   trot_gait.h, line_follow.h sensors/                   <- color_sensor,
+//   line_sensor, tof_sensor tasks/                     <- competition_fsm.h,
+//   nav, sort, search, push, wall dashboard/                 <- web pages for
+//   robot, color, line, ToF, arm, LF
 //
 // WIRING (v5.0 PIN MAP - ADC1 only, because WiFi AP blocks ADC2 on ESP32-S3)
 //   Main I2C0 (PCA9685 0x40 + 3x VL53L0X ToF at 0x30/0x31/0x32):
@@ -42,7 +43,8 @@
 //     GPIO 41 (SDA) -> TCS34725 SDA
 //     GPIO 42 (SCL) -> TCS34725 SCL
 //     GPIO 15       -> TCS34725 LED control (HIGH = white LED on)
-//     3.3V / GND    -> TCS34725 VIN and common GND//   Line array (TCRT5000 analog outputs, S1 far LEFT ... S9 far RIGHT, 3.3V
+//     3.3V / GND    -> TCS34725 VIN and common GND//   Line array (TCRT5000
+//     analog outputs, S1 far LEFT ... S9 far RIGHT, 3.3V
 //   ONLY):
 //     S1=GPIO1  S2=GPIO2  S3=GPIO4  S4=GPIO5  S5=GPIO6
 //     S6=GPIO7  S7=GPIO8  S8=GPIO9  S9=GPIO10
@@ -76,17 +78,15 @@
 #include <limits.h>
 #include <math.h>
 
-
-#include "gait/kinematics.h"        // 3-DOF FK and IK solvers
-#include "gait/servo_controller.h"   // PCA9685 driver, channel map, pose presets & interpolation
-#include "gait/trot_gait.h"          // 6-phase diagonal trot gait (walk, turn, sweep)
-#include "sensors/color_sensor.h"    // colour module API
-#include "sensors/line_sensor.h"     // line array module API
-#include "gait/line_follow.h"        // line-following gait + /linefollow web page
-#include "dashboard/robot_page.h"    // INDEX_HTML
-#include "dashboard/arm_page.h"      // ARM_PAGE - arm control UI at /arm
-#include "dashboard/mpu_page.h"      // MPU_PAGE - gyro dashboard UI at /mpu
-
+#include "dashboard/arm_page.h"   // ARM_PAGE - arm control UI at /arm
+#include "dashboard/mpu_page.h"   // MPU_PAGE - gyro dashboard UI at /mpu
+#include "dashboard/robot_page.h" // INDEX_HTML
+#include "gait/kinematics.h"      // 3-DOF FK and IK solvers
+#include "gait/line_follow.h"     // line-following gait + /linefollow web page
+#include "gait/servo_controller.h" // PCA9685 driver, channel map, pose presets & interpolation
+#include "gait/trot_gait.h" // 6-phase diagonal trot gait (walk, turn, sweep)
+#include "sensors/color_sensor.h" // colour module API
+#include "sensors/line_sensor.h"  // line array module API
 
 // ToF sensor module (header-only implementation)
 #define TOF_IMPLEMENTATION
@@ -94,7 +94,7 @@
 
 // MPU6050 gyroscope (header-only implementation, uses Wire = GPIO 11/12)
 #define MPU_IMPLEMENTATION
-#include "sensors/mpu6050.h"    // yaw integration + /mpu web API
+#include "sensors/mpu6050.h" // yaw integration + /mpu web API
 
 // Competition state machine (includes nav_primitives, arm_interface,
 // grid_search, wall_follow, obstacle_push, color_sort)
@@ -134,8 +134,8 @@ void updateColorLed() {
   }
 }
 
-// 12-DOF servo driver, pose presets, channel map moved to gait/servo_controller.h
-// Walk & turn gait parameters moved to gait/trot_gait.h
+// 12-DOF servo driver, pose presets, channel map moved to
+// gait/servo_controller.h Walk & turn gait parameters moved to gait/trot_gait.h
 
 WebServer server(80);
 bool serverStarted = false;
@@ -172,14 +172,16 @@ enum Job : uint8_t {
   JOB_WALK,
   JOB_TURN,
   JOB_SWEEP,
-  JOB_CRAWL,      // = 7  (used by crawl_gait.h)
-  JOB_LINEFOLLOW, // = 8  (used by line_follow.h)
-  JOB_COMPETITION // = 9  (used by competition_fsm.h)
+  JOB_CRAWL,           // = 7  (used by crawl_gait.h)
+  JOB_LINEFOLLOW,      // = 8  (used by line_follow.h)
+      JOB_COMPETITION, // = 9  (used by competition_fsm.h)
+  JOB_TURNGYRO         // = 10 (gyro-targeted turn)
 };
 volatile Job pendingJob = JOB_NONE;
 bool jobRunning = false;
 int jobArg = 0, jobSpeed = 0, jobSteps = 0, jobVariant = 0;
 bool jobRight = false;
+float jobTargetDeg = 90.0f;
 
 inline bool robotBusy() { return jobRunning || pendingJob != JOB_NONE; }
 
@@ -189,7 +191,9 @@ int walkStepsTarget = 0, walkStepsDone = 0;
 volatile bool turnRunning = false, turnStop = false;
 int turnStepsTarget = 0, turnStepsDone = 0;
 char turnDirection[6] = "none";
-char turnPhaseStr[32] = "";
+char turnPhaseStr[48] = "";
+float turnTargetAngle = 0.0f;
+float turnAngleDone = 0.0f;
 
 // Line-follow state
 volatile bool lfRunning = false, lfStop = false;
@@ -247,19 +251,25 @@ void waitMs(uint32_t ms) {
 void i2cScan() {
   Serial.println("-------------------------------------------------");
   Serial.println("Main I2C0 Bus Scan (SDA=GPIO 11, SCL=GPIO 12):");
-  Serial.println("  Expected: 0x40 (PCA9685), 0x30/0x31/0x32 (ToF x3), 0x68 (MPU6050)");
+  Serial.println(
+      "  Expected: 0x40 (PCA9685), 0x30/0x31/0x32 (ToF x3), 0x68 (MPU6050)");
   int found = 0;
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) {
       Serial.printf("  [OK] Device ACK at 0x%02X%s%s\n", addr,
                     addr == 0x40 ? " (PCA9685)" : "",
-                    (addr==0x30)?" (ToF Front)":(addr==0x31)?" (ToF Right)":(addr==0x32)?" (ToF Left)":(addr==0x40)?" (PCA9685)":"");
+                    (addr == 0x30)   ? " (ToF Front)"
+                    : (addr == 0x31) ? " (ToF Right)"
+                    : (addr == 0x32) ? " (ToF Left)"
+                    : (addr == 0x40) ? " (PCA9685)"
+                                     : "");
       found++;
     }
   }
   if (found == 0)
-    Serial.println("  [!!] No I2C devices found on Main Bus (check SDA=11, SCL=12)!");
+    Serial.println(
+        "  [!!] No I2C devices found on Main Bus (check SDA=11, SCL=12)!");
   Serial.println("-------------------------------------------------");
 }
 
@@ -328,6 +338,9 @@ void runPendingJob() {
     break;
   case JOB_TURN:
     turnGait(jobSteps, jobSpeed, jobRight);
+    break;
+  case JOB_TURNGYRO:
+    turnGyroGait(jobTargetDeg, jobSpeed, jobRight);
     break;
   case JOB_SWEEP:
     sweepTest();
@@ -571,7 +584,70 @@ void hTurnStatus() {
   server.send(200, "application/json",
               String("{\"running\":") + (turnRunning ? "true" : "false") +
                   ",\"steps\":" + turnStepsDone + ",\"target\":" +
-                  turnStepsTarget + ",\"phase\":\"" + turnPhaseStr + "\"}");
+                  turnStepsTarget + ",\"targetAngle\":" + String(turnTargetAngle, 1) +
+                  ",\"angleDone\":" + String(turnAngleDone, 1) +
+                  ",\"yaw\":" + String(mpuGetYaw(), 1) +
+                  ",\"phase\":\"" + turnPhaseStr + "\"}");
+}
+
+void hTurnGyro() {
+  addCORS();
+  if (server.hasArg("stop")) {
+    turnStop = true;
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"stopping\"}");
+    return;
+  }
+  if (robotBusy()) {
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"busy\"}");
+    return;
+  }
+  float deg = server.hasArg("deg") ? server.arg("deg").toFloat() : 90.0f;
+  if (deg < 5.0f)
+    deg = 5.0f;
+  if (deg > 360.0f)
+    deg = 360.0f;
+
+  bool right = false;
+  if (server.hasArg("dir")) {
+    String d = server.arg("dir");
+    d.toLowerCase();
+    right = (d == "right" || d == "cw" || d == "r");
+  } else if (server.hasArg("right")) {
+    right = server.arg("right").toInt() > 0;
+  }
+
+  jobSpeed = server.hasArg("speed")
+                 ? constrain(server.arg("speed").toInt(), 20, 3000)
+                 : 450;
+  jobTargetDeg = deg;
+  turnTargetAngle = deg;
+  turnAngleDone = 0.0f;
+  jobRight = right;
+  turnStepsDone = 0;
+  turnStop = false;
+  turnRunning = true;
+  strncpy(turnDirection, right ? "right" : "left", sizeof(turnDirection));
+  snprintf(turnPhaseStr, sizeof(turnPhaseStr), "starting %.0f deg", deg);
+  Serial.printf("[TURN-GYRO-%c] deg=%.1f speed=%dms\n", right ? 'R' : 'L',
+                jobTargetDeg, jobSpeed);
+  server.send(200, "application/json",
+              "{\"ok\":true,\"msg\":\"turn gyro started\",\"target\":" +
+                  String(deg, 1) + ",\"dir\":\"" + (right ? "right" : "left") +
+                  "\"}");
+  pendingJob = JOB_TURNGYRO;
+}
+
+void hTurnGyroStatus() {
+  addCORS();
+  server.sendHeader("Cache-Control", "no-store");
+  String json = "{\"running\":" + String(turnRunning ? "true" : "false") +
+                ",\"steps\":" + String(turnStepsDone) +
+                ",\"targetAngle\":" + String(turnTargetAngle, 1) +
+                ",\"angleDone\":" + String(turnAngleDone, 1) +
+                ",\"yaw\":" + String(mpuGetYaw(), 1) + ",\"dir\":\"" +
+                String(turnDirection) + "\"" + ",\"phase\":\"" +
+                String(turnPhaseStr) + "\"}";
+  server.send(200, "application/json", json);
 }
 
 void hSweep() {
@@ -652,6 +728,8 @@ void setup() {
   server.on("/turnleft", hTurnLeft);
   server.on("/turnright", hTurnRight);
   server.on("/turnstatus", hTurnStatus);
+  server.on("/turngyro", hTurnGyro);
+  server.on("/turngyrostatus", hTurnGyroStatus);
   server.on("/sweep", hSweep);
 
   // ToF stays on the main bus (GPIO 11/12). The color sensor uses a second

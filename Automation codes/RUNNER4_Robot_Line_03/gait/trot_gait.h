@@ -11,10 +11,10 @@
 // All base angles are synchronized to the STANDING pose (pose 1).
 // =============================================================================
 
+#include "../config/robot_config.h"
+#include "servo_controller.h"
 #include <Arduino.h>
 #include <limits.h>
-#include "servo_controller.h"
-#include "../config/robot_config.h"
 
 // -- Leg Bitmasks -------------------------------------------------------------
 #ifndef M_FL
@@ -26,15 +26,18 @@
 
 // -- Gait Parameters (editable dynamically via web UI) ------------------------
 // Leg order: 0=FL, 1=FR, 2=BL, 3=BR
-int WALK_HIP_DELTA   = 15;   // hip swing, degrees (reduced from 30 for smooth, tight stride)
-int WALK_FEMUR_DELTA = 20;   // femur lift, degrees
+int WALK_HIP_DELTA =
+    15; // hip swing, degrees (reduced from 30 for smooth, tight stride)
+int WALK_FEMUR_DELTA = 20; // femur lift, degrees
 const int WALK_FEMUR_TRIM[4] = {0, 0, 0, 0};
 
-int TURN_HIP_DELTA   = 15;   // hip swing, degrees
-int TURN_FEMUR_DELTA = 20;   // femur lift, degrees
+int TURN_HIP_DELTA =
+    10; // hip swing, degrees (reduced from 15 for tight, controlled turn)
+int TURN_FEMUR_DELTA =
+    15; // femur lift, degrees (reduced from 20 for smoother rotation)
 
 // Direction signs (FL, FR, BL, BR)
-const int WALK_HIP_SIGN[4]   = {-1, +1, -1, +1};
+const int WALK_HIP_SIGN[4] = {-1, +1, -1, +1};
 const int FEMUR_LIFT_SIGN[4] = {+1, -1, -1, +1};
 
 // Offsets relative to STANDING pose (pose 1)
@@ -53,18 +56,28 @@ extern int walkStepsTarget, walkStepsDone;
 extern volatile bool turnRunning, turnStop;
 extern int turnStepsTarget, turnStepsDone;
 extern char turnDirection[6];
-extern char turnPhaseStr[32];
+extern char turnPhaseStr[48];
+extern float turnTargetAngle;
+extern float turnAngleDone;
+
+// Gyro & system functions (forward declared; defined in mpu6050.h / main .ino)
+float mpuGetYaw();
+bool mpuIsReady();
+void mpuSetStationary(bool stationary);
+void serviceBackground();
+void waitMs(uint32_t ms);
 
 // =============================================================================
 // GAIT BASE SYNCHRONIZATION
 // =============================================================================
-// Recomputes plant/base angles from STANDING pose (pose 1) each time a gait starts.
+// Recomputes plant/base angles from STANDING pose (pose 1) each time a gait
+// starts.
 inline void syncGaitBase() {
   for (int l = 0; l < 4; l++) {
-    WALK_HIP_BASE[l]  = TURN_HIP_BASE[l]  = poseAngles[1][l][0];
+    WALK_HIP_BASE[l] = TURN_HIP_BASE[l] = poseAngles[1][l][0];
     WALK_FEM_PLANT[l] = poseAngles[1][l][1] + WALK_FEM_OFFSET[l];
     TURN_FEM_PLANT[l] = poseAngles[1][l][1] + TURN_FEM_OFFSET[l];
-    GAIT_TIBIA[l]     = poseAngles[1][l][2] + GAIT_TIB_OFFSET[l];
+    GAIT_TIBIA[l] = poseAngles[1][l][2] + GAIT_TIB_OFFSET[l];
   }
 }
 
@@ -74,9 +87,11 @@ inline void syncGaitBase() {
 // Build one 4x3 target pose.
 //  swingMask : legs whose hip is moved by hipSign * hipDelta
 //  liftMask  : legs whose femur is moved by femSign * femDelta
-inline void buildGaitPose(int out[4][3], const int hipBase[4], const int hipSign[4],
-                          int hipDelta, const int femPlant[4], const int femSign[4],
-                          const int femDelta[4], uint8_t swingMask, uint8_t liftMask) {
+inline void buildGaitPose(int out[4][3], const int hipBase[4],
+                          const int hipSign[4], int hipDelta,
+                          const int femPlant[4], const int femSign[4],
+                          const int femDelta[4], uint8_t swingMask,
+                          uint8_t liftMask) {
   for (int leg = 0; leg < 4; leg++) {
     out[leg][0] =
         hipBase[leg] + (((swingMask >> leg) & 1) ? hipSign[leg] * hipDelta : 0);
@@ -158,8 +173,7 @@ inline void turnGait(int steps, int speedMs, bool rightTurn) {
   };
   const char *names[6] = {
       "1: FL+BR lift / FR+BL back", "2: FL+BR swing", "3: FL+BR put down",
-      "4: FR+BL lift / FL+BR back", "5: FR+BL swing", "6: FR+BL put down"
-  };
+      "4: FR+BL lift / FL+BR back", "5: FR+BL swing", "6: FR+BL put down"};
 
   // First go to the STANDING pose
   strncpy(turnPhaseStr, "standing", sizeof(turnPhaseStr));
@@ -185,6 +199,118 @@ inline void turnGait(int steps, int speedMs, bool rightTurn) {
   turnRunning = false;
   Serial.printf("[TURN] %s complete. Steps=%d\n", rightTurn ? "Right" : "Left",
                 turnStepsDone);
+}
+
+// =============================================================================
+// TURN GYRO GAIT (Closed-Loop Gyro-Targeted Turn)
+// =============================================================================
+// Rotates the robot using MPU6050 yaw feedback until targetDeg is reached.
+// Evaluates rotation at each half-cycle (phases 2 and 5 when all 4 feet are
+// planted) for clean, high-precision stops.
+inline void turnGyroGait(float targetDeg, int speedMs, bool rightTurn) {
+  syncGaitBase(); // gait follows the STANDING pose
+  turnRunning = true;
+  turnStop = false;
+  turnStepsDone = 0;
+  turnTargetAngle = targetDeg;
+  turnAngleDone = 0.0f;
+  strncpy(turnDirection, rightTurn ? "right" : "left", sizeof(turnDirection));
+
+  if (!mpuIsReady()) {
+    Serial.println(
+        "[TURN-GYRO] MPU not ready! Falling back to step-based turn.");
+    int estSteps = constrain((int)roundf(targetDeg / 12.0f), 1, 30);
+    turnGait(estSteps, speedMs, rightTurn);
+    return;
+  }
+
+  const int dir = rightTurn ? -1 : +1;
+  const int turnHipSign[4] = {dir, dir, dir, dir};
+  const int femDelta[4] = {TURN_FEMUR_DELTA, TURN_FEMUR_DELTA, TURN_FEMUR_DELTA,
+                           TURN_FEMUR_DELTA};
+
+  // {swingMask, liftMask} for the 6 phases
+  const uint8_t seq[6][2] = {
+      {0, M_FL | M_BR},           // 1: FL&BR lift, all hips at base
+      {M_FL | M_BR, M_FL | M_BR}, // 2: swing FL&BR hips
+      {M_FL | M_BR, 0},           // 3: put down FL&BR femurs (all feet planted)
+      {0, M_FR | M_BL},           // 4: FR&BL lift, FL&BR hips return to base
+      {M_FR | M_BL, M_FR | M_BL}, // 5: swing FR&BL hips
+      {M_FR | M_BL, 0}            // 6: put down FR&BL femurs (all feet planted)
+  };
+  const char *names[6] = {"1: FL+BR lift", "2: FL+BR swing", "3: FL+BR plant",
+                          "4: FR+BL lift", "5: FR+BL swing", "6: FR+BL plant"};
+
+  // First ensure robot is in STANDING pose
+  strncpy(turnPhaseStr, "standing", sizeof(turnPhaseStr));
+  moveToPose(1, 400);
+
+  // Enable dynamic tracking on MPU (bypass stationary drift filter)
+  mpuSetStationary(false);
+  waitMs(80);
+
+  float startYaw = mpuGetYaw();
+  const float tolDeg = 3.0f;
+  const int maxCycles = 30;
+  uint32_t tStart = millis();
+
+  Serial.printf("[TURN-GYRO] Target=%.1f deg (%s), startYaw=%.1f\n", targetDeg,
+                rightTurn ? "Right/CW" : "Left/CCW", startYaw);
+
+  bool reached = false;
+  for (int i = 0; i < maxCycles && !turnStop && !reached; i++) {
+    for (int p = 0; p < 6 && !turnStop; p++) {
+      float currentYaw = mpuGetYaw();
+      float turned =
+          rightTurn ? (startYaw - currentYaw) : (currentYaw - startYaw);
+      turnAngleDone = turned;
+      snprintf(turnPhaseStr, sizeof(turnPhaseStr), "C%d %s (%.1f/%.0f)", i + 1,
+               names[p], turned, targetDeg);
+
+      int t[4][3];
+      buildGaitPose(t, TURN_HIP_BASE, turnHipSign, TURN_HIP_DELTA,
+                    TURN_FEM_PLANT, FEMUR_LIFT_SIGN, femDelta, seq[p][0],
+                    seq[p][1]);
+      moveToTarget(t, speedMs);
+
+      // Check angle when all 4 feet are planted on the ground (phases 2 and 5)
+      if (p == 2 || p == 5) {
+        currentYaw = mpuGetYaw();
+        turned = rightTurn ? (startYaw - currentYaw) : (currentYaw - startYaw);
+        turnAngleDone = turned;
+        if (turned >= targetDeg - tolDeg) {
+          Serial.printf("[TURN-GYRO] Target reached at phase %d: turned=%.1f "
+                        "deg (target=%.1f)\n",
+                        p + 1, turned, targetDeg);
+          reached = true;
+          break;
+        }
+      }
+    }
+    if (turnStop)
+      break;
+    turnStepsDone++;
+    if (millis() - tStart > 60000) {
+      Serial.println("[TURN-GYRO] Safety timeout (60s) reached.");
+      break;
+    }
+  }
+
+  // Restore stationary drift filter
+  mpuSetStationary(true);
+
+  // Return cleanly to STANDING pose
+  moveToPose(1, 400);
+  turnRunning = false;
+
+  float finalYaw = mpuGetYaw();
+  float finalTurned = rightTurn ? (startYaw - finalYaw) : (finalYaw - startYaw);
+  turnAngleDone = finalTurned;
+  snprintf(turnPhaseStr, sizeof(turnPhaseStr), "Done: %.1f deg (%d cyc)",
+           finalTurned, turnStepsDone);
+  Serial.printf(
+      "[TURN-GYRO] Finished: turned=%.1f deg target=%.1f deg cycles=%d\n",
+      finalTurned, targetDeg, turnStepsDone);
 }
 
 // =============================================================================

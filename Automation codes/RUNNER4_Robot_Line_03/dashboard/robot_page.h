@@ -247,6 +247,42 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf
 
   <hr class="sb-div">
   <div class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Turn to Gyro Angle</span>
+    <span style="font-size:.5rem;background:rgba(88,166,255,.2);color:#58a6ff;padding:1px 5px;border-radius:4px;font-weight:700">GYRO</span>
+  </div>
+  <div class="play-section">
+    <div style="font-size:.55rem;color:#8b949e;margin-bottom:5px;padding:0 2px">
+      Turns with MPU6050 feedback until target angle
+    </div>
+    <div class="walk-steps-row">
+      <span style="font-size:.63rem;color:#6e7681;flex:1">Target &deg;</span>
+      <input type="number" id="gyroTurnAngleIn" class="walk-steps-in" min="5" max="360" value="90" oninput="clearGyroPresets()">
+      <span style="font-size:.6rem;color:#484f58">&deg;</span>
+    </div>
+    <div style="display:flex;gap:3px;margin-bottom:6px">
+      <button class="walk-variant" id="gap45" style="padding:3px" onclick="setGyroAnglePreset(45)">45&deg;</button>
+      <button class="walk-variant active" id="gap90" style="padding:3px" onclick="setGyroAnglePreset(90)">90&deg;</button>
+      <button class="walk-variant" id="gap180" style="padding:3px" onclick="setGyroAnglePreset(180)">180&deg;</button>
+      <button class="walk-variant" id="gap360" style="padding:3px" onclick="setGyroAnglePreset(360)">360&deg;</button>
+    </div>
+    <div style="display:flex;gap:5px" id="gyroTurnBtnRow">
+      <button class="play-btn stopped" id="gyroTurnLBtn" onclick="toggleGyroTurn('left')" style="flex:1;background:linear-gradient(135deg,#1f6feb,#58a6ff)">&#8634; Left</button>
+      <button class="play-btn stopped" id="gyroTurnRBtn" onclick="toggleGyroTurn('right')" style="flex:1;background:linear-gradient(135deg,#1f6feb,#58a6ff)">&#8635; Right</button>
+    </div>
+    <button class="play-btn playing" id="gyroTurnStopBtn" onclick="stopGyroTurnCmd()" style="display:none;width:100%;margin-top:2px">&#9209; Stop Gyro Turn</button>
+    <div style="font-size:.63rem;color:#58a6ff;text-align:center;font-weight:700;margin-top:4px;min-height:14px" id="gyroTurnAngleStatus"></div>
+    <div class="play-phase" id="gyroTurnPhase"></div>
+    <div class="step-count" id="gyroTurnStepCount"></div>
+    <div class="speed-row" style="margin-top:6px">
+      <span>Fast</span>
+      <input type="range" class="speed-sl" id="gyroTurnSpeedSl" min="20" max="3000" value="450" oninput="updGyroTurnSpeed()">
+      <span>Slow</span>
+    </div>
+    <div style="font-size:.6rem;color:#484f58;text-align:center"><span id="gyroTurnSpeedVal">450</span>ms / step</div>
+  </div>
+
+  <hr class="sb-div">
+  <div class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
     <span>Crawl (1-Leg Gait)</span>
     <span style="font-size:.5rem;background:rgba(63,185,80,.2);color:#3fb950;padding:1px 5px;border-radius:4px;font-weight:700">WAVE</span>
   </div>
@@ -663,6 +699,84 @@ function stopTurnRUI(msg){
   document.getElementById('turnRPhase').textContent=msg||'';
   document.getElementById('turnRStepCount').textContent='';
   lg('Turn Right \u2014 '+(msg||'stopped'),'ok2');
+}
+
+let gyroTurnRunning=false, gyroTurnPollTimer=null, gyroTurnStatusInFlight=false;
+
+function clearGyroPresets(){
+  [45,90,180,360].forEach(function(v){
+    var el = document.getElementById('gap' + v);
+    if(el) el.classList.remove('active');
+  });
+}
+
+function setGyroAnglePreset(deg){
+  document.getElementById('gyroTurnAngleIn').value = deg;
+  [45,90,180,360].forEach(function(v){
+    var el = document.getElementById('gap' + v);
+    if(el) el.classList.toggle('active', v === deg);
+  });
+}
+
+function updGyroTurnSpeed(){
+  document.getElementById('gyroTurnSpeedVal').textContent = document.getElementById('gyroTurnSpeedSl').value;
+}
+
+async function toggleGyroTurn(dir){
+  if(gyroTurnRunning){
+    stopGyroTurnCmd();
+    return;
+  }
+  const deg = parseFloat(document.getElementById('gyroTurnAngleIn').value) || 90;
+  const speed = parseInt(document.getElementById('gyroTurnSpeedSl').value) || 450;
+  gyroTurnRunning = true;
+  document.getElementById('gyroTurnBtnRow').style.display = 'none';
+  document.getElementById('gyroTurnStopBtn').style.display = 'block';
+  document.getElementById('gyroTurnAngleStatus').textContent = 'Target: ' + deg.toFixed(1) + '\u00b0 \u00b7 Turned: 0.0\u00b0';
+  document.getElementById('gyroTurnPhase').textContent = 'Starting gyro turn (' + dir + ')\u2026';
+  document.getElementById('gyroTurnStepCount').textContent = 'Steps: 0';
+  try{
+    const r = await fetchWT('/turngyro?deg=' + deg + '&dir=' + dir + '&speed=' + speed, 8000);
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.msg || 'rejected');
+    gyroTurnPollTimer = setInterval(pollGyroTurnStatus, 600);
+    lg('Gyro Turn started \u2014 ' + deg + '\u00b0 ' + dir + ' @ ' + speed + 'ms/step', 'inf');
+  }catch(e){
+    stopGyroTurnUI('Failed: ' + e.message);
+    lg('Gyro Turn failed \u2014 ' + e.message, 'er2');
+  }
+}
+
+async function stopGyroTurnCmd(){
+  try{ await fetchWT('/turngyro?stop=1', 3000); }catch(e){}
+  stopGyroTurnUI('Stopped.');
+}
+
+async function pollGyroTurnStatus(){
+  if(document.hidden || gyroTurnStatusInFlight) return;
+  gyroTurnStatusInFlight = true;
+  try{
+    const r = await fetchWT('/turngyrostatus', 2000);
+    const d = await r.json();
+    document.getElementById('gyroTurnPhase').textContent = d.phase || '';
+    const tA = (typeof d.targetAngle === 'number') ? d.targetAngle.toFixed(1) : '\u2014';
+    const aD = (typeof d.angleDone === 'number') ? d.angleDone.toFixed(1) : '0.0';
+    const yw = (typeof d.yaw === 'number') ? d.yaw.toFixed(1) : '\u2014';
+    document.getElementById('gyroTurnAngleStatus').textContent = 'Target: ' + tA + '\u00b0 \u00b7 Turned: ' + aD + '\u00b0 (Yaw: ' + yw + '\u00b0)';
+    document.getElementById('gyroTurnStepCount').textContent = 'Steps completed: ' + d.steps;
+    if(!d.running){
+      stopGyroTurnUI('Turn complete \u2713 (' + aD + '\u00b0 in ' + d.steps + ' steps)');
+    }
+  }catch(e){}finally{ gyroTurnStatusInFlight = false; }
+}
+
+function stopGyroTurnUI(msg){
+  gyroTurnRunning = false;
+  if(gyroTurnPollTimer){ clearInterval(gyroTurnPollTimer); gyroTurnPollTimer = null; }
+  document.getElementById('gyroTurnBtnRow').style.display = 'flex';
+  document.getElementById('gyroTurnStopBtn').style.display = 'none';
+  if(msg) document.getElementById('gyroTurnPhase').textContent = msg;
+  lg('Gyro Turn \u2014 ' + (msg || 'stopped'), 'ok2');
 }
 
 let crawlRunning=false, crawlPollTimer=null, crawlStatusInFlight=false;
